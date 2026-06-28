@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <title>Visor de Nave Mejorado</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #050505; }
+        #info { position: absolute; top: 20px; left: 20px; color: white; font-family: sans-serif; pointer-events: none; background: rgba(0,0,0,0.5); padding: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="info">
+    <div style="color: #ff4444;">Eje X (Rojo) - Derecha</div>
+    <div style="color: #44ff44;">Eje Y (Verde) - Arriba</div>
+    <div style="color: #4444ff;">Eje Z (Azul) - Frente</div>
+</div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.165.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.165.0/examples/jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(15, 15, 15);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+
+    // 1. Iluminación potente
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const light = new THREE.DirectionalLight(0xffffff, 2);
+    light.position.set(10, 20, 10);
+    scene.add(light);
+
+    // 2. Indicadores de Ejes Grandes
+    const axesHelper = new THREE.AxesHelper(10); // Tamaño 10
+    scene.add(axesHelper);
+
+    // 3. Rejilla Grande (Entorno)
+    const grid = new THREE.GridHelper(50, 50, 0x888888, 0x333333);
+    scene.add(grid);
+
+    // 4. Carga del modelo
+    const loader = new GLTFLoader();
+    loader.load('player.glb', (gltf) => {
+        const model = gltf.scene;
+        // Si tu nave es muy pequeña o grande, ajusta aquí:
+        // model.scale.set(2, 2, 2);
+        scene.add(model);
+    });
+
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+    }
+    animate();
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+</body>
+</html>
