@@ -1,0 +1,1601 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CARRERA3D2026</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%23050310'/%3E%3Crect x='12' y='10' width='40' height='10' fill='%2300eaff' opacity='0.85'/%3E%3Crect x='12' y='24' width='40' height='10' fill='%23b829f7' opacity='0.85'/%3E%3Crect x='12' y='38' width='40' height='10' fill='%23ff2079' opacity='0.85'/%3E%3C/svg%3E">
+<style>
+  :root{
+    --neon-cyan: #00eaff;
+    --neon-purple: #b829f7;
+    --neon-pink: #ff2079;
+    --neon-amber: #ffd60a;
+    --panel-bg: linear-gradient(135deg, rgba(8,6,26,0.78), rgba(22,10,42,0.6));
+  }
+  *{ box-sizing: border-box; }
+  html, body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:#05030f; overflow:hidden;
+    font-family:'Courier New', Consolas, monospace;
+  }
+  #canvas-container{ position:fixed; top:0; left:0; width:100%; height:100%; z-index:0; }
+  #canvas-container canvas{ display:block; }
+
+  /* Subtle CRT scanline overlay */
+  #scanlines{
+    position:fixed; inset:0; z-index:4; pointer-events:none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(255,255,255,0.035) 0px,
+      rgba(255,255,255,0.035) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    mix-blend-mode: overlay;
+    opacity:0.55;
+  }
+  #vignette{
+    position:fixed; inset:0; z-index:4; pointer-events:none;
+    background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.55) 100%);
+  }
+
+  /* Flash de pantalla al chocar con un semáforo en rojo */
+  #flash{
+    position:fixed; inset:0; z-index:5; pointer-events:none;
+    background:rgba(255,40,80,0); transition:background 0.1s ease-out;
+  }
+  #flash.red   { background:rgba(255,40,80,0.30); }
+  #flash.yellow{ background:rgba(255,220,40,0.18); }
+
+  .hud{ position:fixed; z-index:10; pointer-events:none; user-select:none; }
+
+  .panel{
+    background: var(--panel-bg);
+    border: 1px solid rgba(0,234,255,0.45);
+    border-radius: 6px;
+    box-shadow: 0 0 18px rgba(0,234,255,0.22), inset 0 0 16px rgba(184,41,247,0.15);
+    backdrop-filter: blur(3px);
+    position: relative;
+  }
+  .panel::before, .panel::after{
+    content:""; position:absolute; width:12px; height:12px;
+    border-color: var(--neon-purple); pointer-events:none;
+  }
+  .panel::before{ top:-1px; left:-1px; border-top:2px solid; border-left:2px solid; }
+  .panel::after{ bottom:-1px; right:-1px; border-bottom:2px solid; border-right:2px solid; }
+
+ /* Title */
+  #title{
+    top:14px; left:50%; transform:translateX(-50%);
+    text-align:center; letter-spacing:5px;
+    font-size:26px; font-weight:bold; color:#eaf6ff;
+    text-shadow: 0 0 6px var(--neon-cyan), 0 0 18px var(--neon-cyan), 0 0 34px var(--neon-purple);
+  }
+  #title small{
+    display:block; margin-top:2px; font-size:10px; letter-spacing:4px;
+    color: var(--neon-pink); text-shadow: 0 0 8px var(--neon-pink);
+    font-weight:normal;
+  }
+
+  /* NUEVA Columna HUD Derecha: Mantiene los paneles alineados y evita que se tapen */
+  .right-hud-column {
+    position: absolute;
+    top: 18px;
+    right: 22px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px; /* Espaciado automático garantizado entre elementos */
+    z-index: 10;
+  }
+
+  /* Timer (Adaptado para la columna) */
+  #timer{
+    padding:7px 14px; text-align:right; width:fit-content;
+    margin-left: auto; /* Fuerza la alineación hacia la derecha de la columna */
+  }
+  #timer .label{ font-size:10px; letter-spacing:3px; color:#d3a6ff; opacity:0.8; }
+  #timer .value{
+    font-size:22px; font-weight:bold; color:#fff;
+    text-shadow: 0 0 6px var(--neon-purple), 0 0 18px var(--neon-purple);
+  }
+  #timer .lap{ font-size:11px; color: var(--neon-amber); margin-top:2px; letter-spacing:2px; }
+
+  /* Position (Adaptado para la columna) */
+  #position{
+    padding:6px 14px; text-align:right; width:fit-content;
+    margin-left: auto;
+  }
+  #position .label{ font-size:10px; letter-spacing:3px; color:var(--neon-amber); opacity:0.85; }
+  #position .value{
+    font-size:22px; font-weight:bold; color:#fff; line-height:1;
+    text-shadow: 0 0 6px var(--neon-amber), 0 0 20px var(--neon-amber);
+  }
+  #position .total{ font-size:13px; color:#d3a6ff; margin-left:4px; opacity:0.7; }
+
+  /* Semáforo badge (Adaptado para la columna) */
+  #strikes{
+    padding:6px 12px; text-align:right; width:fit-content;
+    margin-left: auto;
+  }
+  #strikes .label{ font-size:10px; letter-spacing:3px; color:var(--neon-pink); opacity:0.85; }
+  #strikes .value{
+    font-size:18px; font-weight:bold; color:#fff; line-height:1;
+    text-shadow: 0 0 6px var(--neon-pink), 0 0 14px var(--neon-pink);
+  }
+
+  /* Speedometer (Se mantiene fijo abajo a la derecha de la pantalla) */
+  #speedo{
+   /* bottom:22px; */
+	  top:40;
+    right:-10px; padding:10px 14px 8px; width:fit-content; text-align:right;
+    z-index: 10;
+  }
+  #speedo .label{ font-size:10px; letter-spacing:3px; color:#7fe8ff; opacity:0.8; }
+  #speedo .value{
+    font-size:38px; font-weight:bold; color:#fff; line-height:1;
+    text-shadow: 0 0 6px var(--neon-cyan), 0 0 22px var(--neon-cyan);
+  }
+  #speedo .unit{ font-size:12px; color:#a6d9ff; margin-left:4px; }
+  #speedo .gaugeTrack{
+    margin-top:6px; height:5px; border-radius:3px; background:rgba(255,255,255,0.08);
+    overflow:hidden;
+    width: 100%;
+  }
+  #speedo .gaugeFill{
+    height:100%; width:0%; border-radius:3px;
+    background: linear-gradient(90deg, var(--neon-cyan), var(--neon-purple), var(--neon-pink));
+    box-shadow: 0 0 10px var(--neon-cyan);
+    transition: width 0.05s linear;
+  }
+
+  /* Minimap */
+  #minimapPanel{
+    top:14px; left:14px; padding:8px; width:142px; height:142px;
+  }
+  #minimapLabel{
+    position:absolute; top:-7px; left:10px;
+    background: var(--panel-bg); padding:1px 8px;
+    font-size:9px; letter-spacing:2px; color: var(--neon-cyan);
+    border: 1px solid rgba(0,234,255,0.45); border-radius:3px;
+  }
+  #minimap{ width:100%; height:100%; display:block; }
+
+  /* Controls hint */
+  #controls{
+   /* bottom:22px;*/
+top:20px;
+    left:22px; padding:8px 12px; font-size:11px; color:#bfe9ff;
+    letter-spacing:1px; line-height:1.6; width:fit-content;
+  }
+  #controls .key{
+    display:inline-block; min-width:16px; padding:1px 6px; margin-right:6px;
+    border:1px solid rgba(0,234,255,0.6); border-radius:4px; text-align:center;
+    color:#eaf6ff; background:rgba(0,234,255,0.08);
+  }
+
+  /* Start overlay */
+  #overlay{
+    position:fixed; inset:0; z-index:20; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center;
+    background: radial-gradient(ellipse at center, rgba(8,6,26,0.55), rgba(2,1,8,0.92));
+    pointer-events:auto;
+  }
+  #overlay h1{
+    font-size:46px; letter-spacing:8px; margin:0 0 6px; color:#fff;
+    text-shadow: 0 0 8px var(--neon-cyan), 0 0 26px var(--neon-cyan), 0 0 50px var(--neon-purple);
+  }
+  #overlay p.tag{ color: var(--neon-pink); letter-spacing:4px; font-size:12px; margin:0 0 18px; }
+  #overlay .roster{
+    display:flex; gap:18px; margin-bottom:22px; flex-wrap:wrap; justify-content:center;
+    font-size:11px; letter-spacing:3px; color:#bfe9ff;
+  }
+  #overlay .roster .pilot{
+    padding: 6px 12px; border:1px solid rgba(255,255,255,0.18); border-radius:18px;
+  }
+  #overlay .roster .pilot span{ margin-left:6px; }
+  #overlay .keys{ display:flex; gap:18px; margin-bottom:22px; color:#bfe9ff; font-size:13px; }
+  #overlay .keys .grp{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+  #overlay .keycap{
+    padding:6px 12px; border:1px solid var(--neon-cyan); border-radius:6px;
+    color:#eaf6ff; background:rgba(0,234,255,0.08); box-shadow:0 0 10px rgba(0,234,255,0.35);
+    font-weight:bold;
+  }
+  #startBtn{
+    padding:12px 38px; font-size:15px; letter-spacing:4px; font-weight:bold;
+    color:#05030f; background: linear-gradient(90deg, var(--neon-cyan), var(--neon-purple));
+    border:none; border-radius:30px; cursor:pointer;
+    box-shadow:0 0 24px rgba(0,234,255,0.55);
+    font-family: inherit;
+  }
+  #startBtn:hover{ filter:brightness(1.15); }
+  #overlay .hint{ margin-top:14px; font-size:11px; color:#8fa6c2; letter-spacing:2px; }
+
+  /* Countdown */
+  #countdown{
+    position:fixed; inset:0; z-index:21; display:none; align-items:center; justify-content:center;
+    pointer-events:none;
+  }
+  #countdown span{
+    font-size:120px; font-weight:bold; color:#fff;
+    text-shadow:0 0 20px var(--neon-cyan), 0 0 60px var(--neon-purple);
+  }
+
+  /* Finish overlay */
+  #finishOverlay{
+    position:fixed; inset:0; z-index:25;
+    display:flex; align-items:center; justify-content:center;
+    background: radial-gradient(ellipse at center, rgba(8,6,26,0.75), rgba(2,1,8,0.96));
+    opacity:0; pointer-events:none;
+    transition: opacity 0.5s ease;
+  }
+  #finishOverlay.visible{ opacity:1; pointer-events:auto; }
+  #finishPanel{
+    min-width: 420px; max-width: 92vw;
+    padding: 26px 30px 22px;
+    text-align:center;
+  }
+  #finishPanel h2{
+    margin:0 0 4px; font-size:32px; letter-spacing:6px;
+    color: var(--neon-amber);
+    text-shadow: 0 0 10px var(--neon-amber), 0 0 26px var(--neon-amber);
+  }
+  #finishPanel h2.win{ color: #ffd60a; text-shadow: 0 0 12px #ffd60a, 0 0 30px #ff8800; }
+  #finishPanel h2.podium{ color: var(--neon-cyan); text-shadow: 0 0 10px var(--neon-cyan), 0 0 26px var(--neon-cyan); }
+  #finishPanel h2.lose{ color: var(--neon-pink); text-shadow: 0 0 10px var(--neon-pink), 0 0 26px var(--neon-pink); }
+  #finishPanel .subtitle{
+    font-size:11px; letter-spacing:4px; color:var(--neon-cyan);
+    margin-bottom:18px;
+  }
+  #rankingsTable{
+    width:100%; border-collapse:collapse;
+    margin:0 0 18px; font-size:13px; letter-spacing:1px;
+  }
+  #rankingsTable th{
+    text-align:left; padding:6px 8px;
+    font-size:10px; letter-spacing:3px;
+    color: var(--neon-purple); opacity:0.85;
+    border-bottom:1px solid rgba(184,41,247,0.45);
+  }
+  #rankingsTable td{
+    padding:7px 8px;
+    border-bottom:1px solid rgba(255,255,255,0.06);
+  }
+  #rankingsTable tr.highlight td{
+    background: rgba(0,234,255,0.10);
+    font-weight:bold;
+    box-shadow: inset 2px 0 0 var(--neon-cyan);
+  }
+  #rankingsTable tr.racing td{ color:#8fa6c2; opacity:0.7; font-style:italic; }
+  #rankingsTable .pos-col{ width:50px; color: var(--neon-cyan); font-weight:bold; }
+  #rankingsTable .pilot-col{ text-align:left; }
+  #rankingsTable .time-col{ text-align:right; color: var(--neon-amber); }
+  #restartBtn{
+    padding:10px 32px; font-size:13px; letter-spacing:4px; font-weight:bold;
+    color:#05030f; background: linear-gradient(90deg, var(--neon-cyan), var(--neon-purple));
+    border:none; border-radius:24px; cursor:pointer;
+    box-shadow:0 0 18px rgba(0,234,255,0.45);
+    font-family:inherit;
+  }
+  #restartBtn:hover{ filter:brightness(1.15); }
+
+  @media (max-width:700px){
+    #title{ font-size:17px; letter-spacing:3px; }
+    #speedo .value{ font-size:28px; }
+    #controls{ font-size:9px; }
+    #overlay h1{ font-size:28px; letter-spacing:4px; }
+    #minimapPanel{ width:108px; height:108px; top:10px; left:10px; }
+    #finishPanel{ min-width: 92vw; padding: 20px 14px; }
+    #finishPanel h2{ font-size:22px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+<div id="scanlines"></div>
+<div id="vignette"></div>
+<div id="flash"></div>
+<div class="right-hud-column">
+<div id="title" class="hud">CARRERA3D2026<small>CIRCUITO NEÓN · TEMPORADA 2026</small></div>
+
+<div id="minimapPanel" class="hud panel">
+  <span id="minimapLabel">RADAR</span>
+  <canvas id="minimap" width="284" height="284"></canvas>
+</div>
+
+<div id="timer" class="hud panel">
+  <div class="label">TIEMPO</div>
+  <div class="value" id="timeValue">00:00.00</div>
+  <div class="lap" id="lapValue">VUELTA 1/3</div>
+</div>
+
+<div id="position" class="hud panel">
+  <div class="label">POSICIÓN</div>
+  <div><span class="value" id="posValue">1</span><span class="total">/5</span></div>
+</div>
+
+<div id="strikes" class="hud panel">
+  <div class="label">SEMÁFOROS EN ROJO</div>
+  <div class="value" id="strikeValue">0</div>
+</div>
+
+</div></div>
+
+<div id="speedo" class="hud panel">
+  <div class="label">VELOCIDAD</div>
+  <div><span class="value" id="speedValue">000</span><span class="unit">km/h</span></div>
+  <div class="gaugeTrack"><div class="gaugeFill" id="gaugeFill"></div></div>
+</div>
+
+<div id="controls" class="hud panel">
+  <div><span class="key">&#8593;</span><span class="key">W</span> Acelerar</div>
+  <div><span class="key">&#8592;</span><span class="key">A</span> Izquierda</div>
+  <div><span class="key">&#8594;</span><span class="key">D</span> Derecha</div>
+</div>
+
+<div id="overlay">
+  <h1>CARRERA3D2026</h1>
+  <p class="tag">UNA CARRERA ANTIGRAVITATORIA · AÑO 2026</p>
+  <div class="roster" id="roster"></div>
+  <div class="keys">
+    <div class="grp"><span class="keycap">&#8593; / W</span><span>Acelerar</span></div>
+    <div class="grp"><span class="keycap">&#8592; / A</span><span>Izquierda</span></div>
+    <div class="grp"><span class="keycap">&#8594; / D</span><span>Derecha</span></div>
+  </div>
+  <button id="startBtn">INICIAR CARRERA</button>
+  <p class="hint">o presiona ENTER · 3 vueltas · 5 naves · esquiva los semáforos en rojo</p>
+</div>
+
+<div id="countdown"><span id="cdText">3</span></div>
+
+<div id="finishOverlay">
+  <div id="finishPanel" class="panel">
+    <h2 id="finishTitle">RESULTADO</h2>
+    <p class="subtitle" id="finishSubtitle">CLASIFICACIÓN FINAL</p>
+    <table id="rankingsTable">
+      <thead>
+        <tr><th class="pos-col">POS</th><th class="pilot-col">PILOTO</th><th class="time-col">TIEMPO</th></tr>
+      </thead>
+      <tbody id="rankingsBody"></tbody>
+    </table>
+    <button id="restartBtn">REINICIAR</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  /* =========================================================
+     CONSTANTES DE PISTA Y NAVE
+  ========================================================= */
+  const TRACK_WIDTH   = 40;
+  const HALF_WIDTH    = TRACK_WIDTH / 2;
+  const SHIP_HALF_W   = 1.3;
+  const MAX_LATERAL   = HALF_WIDTH - SHIP_HALF_W;
+  const SAMPLES       = 400;
+  const TOTAL_LAPS    = 3;
+  const TOTAL_RACERS  = 5;          // jugador + 4 oponentes
+  const UP            = new THREE.Vector3(0, 1, 0);
+
+  /* =========================================================
+     SEMÁFOROS
+     - 6 unidades distribuidas por la pista en ambos lados
+     - Ciclo: ROJO (3.5s) → AMARILLO (1.0s) → VERDE (2.5s)
+     - Cada semáforo tiene una fase distinta (no están sincronizados)
+     - Chocar en ROJO = penalización fuerte; AMARILLO = leve; VERDE = nada
+  ========================================================= */
+  const SEMAPHORE_CYCLE      = 7.0;
+  const SEMAPHORE_RED_END    = 3.5;
+  const SEMAPHORE_YELLOW_END = 4.5;
+  const SEMAPHORE_HIT_RADIUS = 4.0;
+  const SEMAPHORE_PENALTY_RED    = 0.55;   // multiplicador de velocidad al chocar en rojo
+  const SEMAPHORE_PENALTY_YELLOW = 0.88;
+
+  /* =========================================================
+     ESCENA / CÁMARA / RENDERER
+  ========================================================= */
+  const container = document.getElementById('canvas-container');
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x05030f);
+  scene.fog = new THREE.FogExp2(0x05030f, 0.0024);
+
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  container.appendChild(renderer.domElement);
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+
+  /* =========================================================
+     LUCES
+  ========================================================= */
+  scene.add(new THREE.AmbientLight(0x1a1230, 1.15));
+
+  const dirLight = new THREE.DirectionalLight(0x7fa3ff, 0.5);
+  dirLight.position.set(120, 180, 60);
+  scene.add(dirLight);
+
+  const neonA = new THREE.PointLight(0x00eaff, 1.3, 420);
+  neonA.position.set(0, 90, 0);
+  scene.add(neonA);
+
+  const neonB = new THREE.PointLight(0xb829f7, 1.1, 420);
+  neonB.position.set(150, 70, -120);
+  scene.add(neonB);
+
+  const neonC = new THREE.PointLight(0xff2079, 0.8, 380);
+  neonC.position.set(-180, 70, 150);
+  scene.add(neonC);
+
+  /* =========================================================
+     TRAZADO DE LA PISTA (CatmullRomCurve3 cerrada)
+  ========================================================= */
+  const controlPoints = [
+    new THREE.Vector3(   0,  2, -220),
+    new THREE.Vector3( 160, 14, -270),
+    new THREE.Vector3( 300,  6, -170),
+    new THREE.Vector3( 330, 22,    0),
+    new THREE.Vector3( 250,  8,  110),
+    new THREE.Vector3( 120, 18,  180),
+    new THREE.Vector3( 190,  4,  300),
+    new THREE.Vector3(  40, 16,  360),
+    new THREE.Vector3(-150,  2,  320),
+    new THREE.Vector3(-240, 20,  170),
+    new THREE.Vector3(-190,  6,   30),
+    new THREE.Vector3(-280, 14, -100),
+    new THREE.Vector3(-190,  2, -230),
+    new THREE.Vector3( -70, 10, -280)
+  ];
+
+  const trackCurve = new THREE.CatmullRomCurve3(controlPoints, true, 'catmullrom', 0.55);
+  trackCurve.arcLengthDivisions = 800;
+  const TRACK_LENGTH = trackCurve.getLength();
+
+  // Muestreo de la curva: centros, bordes izquierdo/derecho, tangentes y vector "derecha"
+  const centerPts = [], leftPts = [], rightPts = [], tangents = [], rightVecs = [];
+  for (let i = 0; i < SAMPLES; i++) {
+    const u = i / SAMPLES;
+    const p   = trackCurve.getPointAt(u);
+    const tan = trackCurve.getTangentAt(u).normalize();
+    const right = new THREE.Vector3().crossVectors(tan, UP).normalize();
+    centerPts.push(p);
+    tangents.push(tan);
+    rightVecs.push(right);
+    leftPts.push(p.clone().addScaledVector(right, -HALF_WIDTH));
+    rightPts.push(p.clone().addScaledVector(right, HALF_WIDTH));
+  }
+
+  /* ---------- Superficie de la pista (cinta plana) ---------- */
+  function buildRoad() {
+    const positions = [];
+    for (let i = 0; i < SAMPLES; i++) {
+      const j = (i + 1) % SAMPLES;
+      const a = leftPts[i], b = rightPts[i], c = rightPts[j], d = leftPts[j];
+      positions.push(a.x, a.y, a.z,  b.x, b.y, b.z,  c.x, c.y, c.z);
+      positions.push(a.x, a.y, a.z,  c.x, c.y, c.z,  d.x, d.y, d.z);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x100c26, emissive: 0x150a32, emissiveIntensity: 0.55,
+      metalness: 0.55, roughness: 0.45, side: THREE.DoubleSide
+    });
+    return new THREE.Mesh(geo, mat);
+  }
+  scene.add(buildRoad());
+
+  /* ---------- Bordes luminosos (TubeGeometry sobre curva cerrada) ---------- */
+  function buildEdgeTube(points, color) {
+    const curve = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.55);
+    const geo = new THREE.TubeGeometry(curve, SAMPLES, 0.5, 8, true);
+    const mat = new THREE.MeshBasicMaterial({ color });
+    return new THREE.Mesh(geo, mat);
+  }
+  scene.add(buildEdgeTube(leftPts,  0x00eaff));
+  scene.add(buildEdgeTube(rightPts, 0xb829f7));
+
+  /* ---------- Línea central discontinua ---------- */
+  (function buildCenterLine() {
+    const pts = centerPts.map(p => p.clone().add(new THREE.Vector3(0, 0.06, 0)));
+    pts.push(pts[0].clone());
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const mat = new THREE.LineDashedMaterial({ color: 0x4a4a9a, dashSize: 4, gapSize: 3 });
+    const line = new THREE.Line(geo, mat);
+    line.computeLineDistances();
+    scene.add(line);
+  })();
+
+  /* ---------- Pilares de neón a lo largo del trazado ---------- */
+  (function buildPylons() {
+    const group = new THREE.Group();
+    for (let i = 0; i < SAMPLES; i += 18) {
+      [[leftPts[i], 0x00eaff], [rightPts[i], 0xb829f7]].forEach(pair => {
+        const pt = pair[0], color = pair[1];
+        const h = 5 + Math.random() * 4;
+        const geo = new THREE.CylinderGeometry(0.22, 0.22, h, 6);
+        const mat = new THREE.MeshBasicMaterial({ color });
+        const m = new THREE.Mesh(geo, mat);
+        m.position.copy(pt).add(new THREE.Vector3(0, h / 2, 0));
+        group.add(m);
+      });
+    }
+    scene.add(group);
+  })();
+
+  /* ---------- Línea de meta a cuadros ---------- */
+  (function buildFinishLine() {
+    const group = new THREE.Group();
+    const segs = 10;
+    const segW = TRACK_WIDTH / segs;
+    const p = centerPts[0], right = rightVecs[0];
+    const angle = Math.atan2(right.x, right.z);
+    for (let s = 0; s < segs; s++) {
+      const geo = new THREE.BoxGeometry(segW * 0.96, 0.1, 3.2);
+      const color = (s % 2 === 0) ? 0xffffff : 0xff2079;
+      const mat = new THREE.MeshBasicMaterial({ color });
+      const m = new THREE.Mesh(geo, mat);
+      const offset = -HALF_WIDTH + segW * (s + 0.5);
+      m.position.copy(p).addScaledVector(right, offset);
+      m.position.y += 0.1;
+      m.rotation.y = angle;
+      group.add(m);
+    }
+    scene.add(group);
+  })();
+
+  /* ---------- Paneles de velocidad (flechas brillantes) ---------- */
+  const arrowMeshes = [];
+  (function buildArrows() {
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 1.7);
+    shape.lineTo(1.1, 0.25);
+    shape.lineTo(0.4, 0.25);
+    shape.lineTo(0.4, -1.7);
+    shape.lineTo(-0.4, -1.7);
+    shape.lineTo(-0.4, 0.25);
+    shape.lineTo(-1.1, 0.25);
+    shape.lineTo(0, 1.7);
+    const arrowGeo = new THREE.ShapeGeometry(shape);
+    arrowGeo.rotateX(-Math.PI / 2);
+
+    const positionsU = [0.1, 0.28, 0.46, 0.6, 0.74, 0.9];
+    positionsU.forEach(u => {
+      const idx = Math.floor(u * SAMPLES) % SAMPLES;
+      const p = centerPts[idx], tan = tangents[idx];
+      // La punta del shape queda en -Z local tras rotateX(-π/2);
+      // para alinearla con la tangente (sentido de avance) usamos atan2(-x, -z).
+      const angle = Math.atan2(-tan.x, -tan.z);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xffd60a, transparent: true, opacity: 0.9, side: THREE.DoubleSide
+      });
+      const mesh = new THREE.Mesh(arrowGeo, mat);
+      mesh.position.copy(p).add(new THREE.Vector3(0, 0.12, 0));
+      mesh.rotation.y = angle;
+      arrowMeshes.push(mesh);
+      scene.add(mesh);
+    });
+  })();
+
+  /* =========================================================
+     CARGA DEL MODELO .GLB Y TINTADO DE NAVES
+     - El .glb contiene un mesh "Cube" con 4 materiales:
+         "Material"      → casco (tinte primario multiplicativo)
+         "Material.001"  → detalle oscuro (se mantiene oscuro)
+         "Material.002"  → acento (tinte multiplicativo con acento)
+         "Material.003"  → capa emisiva (color acento, glow)
+     - Cada clon recibe materiales propios (clonados) para poder
+       tintarlos sin afectar a los demás pilotos.
+  ========================================================= */
+  const MODEL_URL       = 'player.glb';
+  const SEMAPHORE_URL   = 'semaforo.glb';
+  const ENGINE_AUDIO_URL = 'sonido_nave00.wav';
+	/* =========================================================
+     OBSTÁCULOS (SEÑALES DE TRÁNSITO)
+     - Distribuidos por la pista en posiciones estratégicas
+     - Chocar ralentiza al jugador y lo empuja levemente
+  ========================================================= */
+  const OBSTACLE_URL        = 'Senal_transito_amarillo_negro.glb';
+  const OBSTACLE_HIT_RADIUS = 3.2;
+  const OBSTACLE_PENALTY    = 0.65; // Multiplicador de velocidad al chocar (penalización)
+  
+  let obstacles = []; // Almacenará las instancias físicas de los obstáculos
+
+  function tintMaterial(mat, primaryHex, accentHex) {
+    const m = mat.clone();
+    const name = m.name || '';
+    const emSum = m.emissive ? (m.emissive.r + m.emissive.g + m.emissive.b) : 0;
+
+    if (emSum > 0.01 || /\.003$/.test(name) || /emissive/i.test(name)) {
+      // Capa emisiva: el acento brilla
+      m.emissive = new THREE.Color(accentHex);
+      m.color    = new THREE.Color(accentHex);
+    } else if (/\.002$/.test(name)) {
+      // Acento secundario
+      if (m.color) m.color.multiply(new THREE.Color(accentHex));
+    } else if (/\.001$/.test(name)) {
+      // Detalle oscuro: se mantiene
+      if (m.color) m.color.multiplyScalar(0.45);
+    } else {
+      // Casco principal: tinte con el color primario
+      if (m.color) m.color.multiply(new THREE.Color(primaryHex));
+    }
+    return m;
+  }
+
+  function buildShipFromModel(template, primaryHex, accentHex) {
+    const ship = template.clone(true);
+    // Quitamos luces del propio .glb (ya tenemos luces en la escena)
+    const toRemove = [];
+    ship.traverse(obj => { if (obj.isLight) toRemove.push(obj); });
+    toRemove.forEach(l => { if (l.parent) l.parent.remove(l); });
+
+    // Tintamos materiales mesh por mesh (admite multi-material)
+    ship.traverse(obj => {
+      if (!obj.isMesh) return;
+      const oldMats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      const newMats = oldMats.map(m => tintMaterial(m, primaryHex, accentHex));
+      obj.material = Array.isArray(obj.material) ? newMats : newMats[0];
+    });
+
+    // El modelo llega en unidades grandes (~7.8 × 6.8); lo escalamos
+    // para que tenga el tamaño de las naves del juego.
+    ship.scale.set(0.32, 0.32, 0.32);
+    return ship;
+  }
+
+  function loadPlayerModel(url) {
+    return new Promise((resolve, reject) => {
+      const loader = new THREE.GLTFLoader();
+      loader.load(url, gltf => resolve({ scene: gltf.scene, animations: gltf.animations || [] }), undefined, reject);
+    });
+  }
+
+  /* ---------- Carga del modelo del semáforo ---------- */
+  function loadSemaphore(url) {
+    return new Promise((resolve, reject) => {
+      const loader = new THREE.GLTFLoader();
+      loader.load(url, gltf => resolve(gltf.scene), undefined, reject);
+    });
+  }
+
+	/* ---------- Carga del modelo del obstáculo ---------- */
+	  function loadObstacle(url) {
+		      return new Promise((resolve, reject) => {
+			            const loader = new THREE.GLTFLoader();
+			            loader.load(url, gltf => resolve(gltf.scene), undefined, reject);
+			          });
+		    }
+/* Construye un obstáculo a partir del template base */
+	  function buildObstacle(template) {
+		      const obs = template.clone(true);
+		      
+		      // Limpieza de luces internas si las tuviera
+		      const toRemove = [];
+		      obs.traverse(obj => { if (obj.isLight) toRemove.push(obj); });
+		      toRemove.forEach(l => { if (l.parent) l.parent.remove(l); });
+		      
+		      return obs;
+		    }
+
+  /* Construye un semáforo a partir del template y devuelve referencias a
+     sus 3 materiales de luz (rojo/amarillo/verde) para animarlos. */
+  function buildSemaphore(template) {
+    const sem = template.clone(true);
+
+    // Quitamos luces del propio GLB
+    const toRemove = [];
+    sem.traverse(obj => { if (obj.isLight) toRemove.push(obj); });
+    toRemove.forEach(l => { if (l.parent) l.parent.remove(l); });
+
+    // CLONAMOS los materiales para que cada semáforo tenga su propio set
+    // y podamos modificar el emissiveIntensity de cada luz de forma
+    // independiente sin afectar a los demás semáforos.
+    sem.traverse(obj => {
+      if (!obj.isMesh) return;
+      if (Array.isArray(obj.material)) {
+        obj.material = obj.material.map(m => m.clone());
+      } else if (obj.material) {
+        obj.material = obj.material.clone();
+      }
+    });
+
+    const lights = { red: null, yellow: null, green: null };
+    sem.traverse(obj => {
+      if (!obj.isMesh) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(m => {
+        if (!m || !m.color) return;
+        const r = m.color.r, g = m.color.g, b = m.color.b;
+        if (r > 0.5 && g < 0.15 && b < 0.15) lights.red    = m;
+        else if (r > 0.5 && g > 0.5 && b < 0.15) lights.yellow = m;
+        else if (r < 0.15 && g > 0.5 && b < 0.15) lights.green  = m;
+      });
+    });
+
+    return { mesh: sem, lights: lights };
+  }
+
+  /* Variables de las naves — se asignan al resolverse la carga */
+  let ship = null;
+  let opponents = [];
+  let semaphores = [];
+
+  /* AnimationMixer por nave (jugador + 4 IA). Cada mixer reproduce el
+     clip de la hélice en bucle sobre el nodo Sphere del modelo clonado. */
+  let playerMixer = null;
+  const opponentMixers = [];
+
+  /* =========================================================
+     OPONENTES (IA) — velocidades base SUBIDAS para más dificultad
+     (antes 130-138; ahora 138-148 + rubber-band más estricto)
+  ========================================================= */
+  const OPPONENT_DEFS = [
+    { name: 'FÉNIX',  c1: 0xff2079, c2: 0xff6699, baseSpeed: 157.5, phase: 0.0,  freq: 1.3, bias:  4 },
+    { name: 'VÍBORA', c1: 0xffd60a, c2: 0xff8800, baseSpeed: 157.4, phase: 1.2,  freq: 1.7, bias: -3 },
+    { name: 'NOVA',   c1: 0x44ff88, c2: 0x88ff44, baseSpeed: 157.3, phase: 2.5,  freq: 1.1, bias:  5 },
+    { name: 'CUERVO', c1: 0xff44aa, c2: 0xdd44ff, baseSpeed: 157.1, phase: 3.7,  freq: 1.5, bias: -5 }
+  ];
+
+  /* Pintar el roster en el overlay inicial (se llama tras cargar el .glb) */
+  function paintRoster() {
+    const roster = document.getElementById('roster');
+    const all = [
+      { name: 'TÚ', color: '#00eaff' },
+      ...opponents.map(o => ({ name: o.name, color: '#' + o.c1.toString(16).padStart(6,'0') }))
+    ];
+    roster.innerHTML = all.map(p =>
+      `<div class="pilot" style="border-color:${p.color}66;color:${p.color}">● <span>${p.name}</span></div>`
+    ).join('');
+  }
+
+  /* =========================================================
+     AUDIO DEL MOTOR — Web Audio API
+       · Carga el WAV en un AudioBuffer
+       · Lo reproduce en bucle con un BufferSource
+       · Modula playbackRate y gain según la velocidad de la nave
+       · Se inicializa con el gesto del usuario (botón INICIAR)
+  ========================================================= */
+  const audio = {
+    ctx:        null,
+    source:     null,
+    gain:       null,
+    filter:     null,
+    started:    false,
+    loaded:     false
+  };
+
+  async function setupEngineAudio(url) {
+    try {
+      audio.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const arrayBuf = await resp.arrayBuffer();
+      const audioBuf = await audio.ctx.decodeAudioData(arrayBuf);
+
+      audio.source = audio.ctx.createBufferSource();
+      audio.source.buffer = audioBuf;
+      audio.source.loop = true;
+
+      audio.filter = audio.ctx.createBiquadFilter();
+      audio.filter.type = 'lowpass';
+      audio.filter.frequency.value = 2200;
+      audio.filter.Q.value = 0.7;
+
+      audio.gain = audio.ctx.createGain();
+      audio.gain.gain.value = 0.0;
+
+      audio.source.connect(audio.filter);
+      audio.filter.connect(audio.gain);
+      audio.gain.connect(audio.ctx.destination);
+      audio.loaded = true;
+    } catch (err) {
+      console.warn('No se pudo cargar el audio del motor:', err);
+    }
+  }
+
+  function startEngineAudio() {
+    if (!audio.loaded || audio.started) return;
+    if (audio.ctx && audio.ctx.state === 'suspended') {
+      audio.ctx.resume();
+    }
+    try {
+      audio.source.start(0);
+      audio.started = true;
+    } catch (e) { /* ya estaba reproduciendo */ }
+  }
+
+  function updateEngineAudio() {
+    if (!audio.loaded || !audio.started) return;
+    const norm = THREE.MathUtils.clamp(state.velocity / state.maxVelocity, 0, 1);
+    // Pitch: idle bajo → acelerado agudo
+    const rate = 0.55 + norm * 1.35;
+    // Volumen: apenas audible al ralentí → claro al acelerar
+    const vol  = 0.05 + norm * 0.40;
+    // Pequeño suavizado para evitar clicks
+    const now = audio.ctx.currentTime;
+    audio.source.playbackRate.setTargetAtTime(rate, now, 0.08);
+    audio.gain.gain.setTargetAtTime(vol,  now, 0.08);
+  }
+
+  /* =========================================================
+     PARTÍCULAS DE VELOCIDAD
+  ========================================================= */
+  const STREAK_COUNT = 160;
+  const streakAnchor = new THREE.Group();
+  scene.add(streakAnchor);
+
+  const streakData = [];
+  for (let i = 0; i < STREAK_COUNT; i++) {
+    streakData.push({
+      x: (Math.random() - 0.5) * 46,
+      y: Math.random() * 16 - 2,
+      z: -Math.random() * 220,
+      len: 2.5 + Math.random() * 5
+    });
+  }
+
+  const streakPositions = new Float32Array(STREAK_COUNT * 2 * 3);
+  const streakColors    = new Float32Array(STREAK_COUNT * 2 * 3);
+  const colA = new THREE.Color(0x00eaff);
+  const colB = new THREE.Color(0xb829f7);
+  for (let i = 0; i < STREAK_COUNT; i++) {
+    const c = (i % 2 === 0) ? colA : colB;
+    streakColors[i * 6 + 0] = c.r; streakColors[i * 6 + 1] = c.g; streakColors[i * 6 + 2] = c.b;
+    streakColors[i * 6 + 3] = c.r; streakColors[i * 6 + 4] = c.g; streakColors[i * 6 + 5] = c.b;
+  }
+
+  const streakGeo = new THREE.BufferGeometry();
+  streakGeo.setAttribute('position', new THREE.BufferAttribute(streakPositions, 3));
+  streakGeo.setAttribute('color', new THREE.BufferAttribute(streakColors, 3));
+  const streakMat = new THREE.LineBasicMaterial({
+    vertexColors: true, transparent: true, opacity: 0.8
+  });
+  const streaks = new THREE.LineSegments(streakGeo, streakMat);
+  scene.add(streaks);
+
+  function updateStreaks(delta, speedFactor) {
+    const arr = streakGeo.attributes.position.array;
+    for (let i = 0; i < STREAK_COUNT; i++) {
+      const s = streakData[i];
+      s.z += (40 + speedFactor * 220) * delta;
+      if (s.z > 26) {
+        s.z = -220 - Math.random() * 40;
+        s.x = (Math.random() - 0.5) * 46;
+        s.y = Math.random() * 16 - 2;
+      }
+      const base = i * 6;
+      arr[base + 0] = s.x; arr[base + 1] = s.y; arr[base + 2] = s.z;
+      arr[base + 3] = s.x; arr[base + 4] = s.y; arr[base + 5] = s.z + s.len;
+    }
+    streakGeo.attributes.position.needsUpdate = true;
+  }
+
+  /* =========================================================
+     ESTADO DEL JUEGO / FÍSICA / CONTROLES
+  ========================================================= */
+  const state = {
+    velocity: 0,
+    maxVelocity: 165,           // +15 para que el jugador pueda competir
+    accel: 75,
+    friction: 48,
+    lateralOffset: 0,
+    lateralSpeed: 28,
+    u: 0,
+    lap: 1,
+    raceTime: 0,
+    started: false,
+    finished: false,
+    finishTime: 0,
+    prevU: 0,
+    redStrikes: 0,             // número de choques con semáforos en rojo
+    keys: { left: false, right: false, up: false }
+  };
+
+  function setKey(key, value) {
+    if (key === 'ArrowLeft' || key === 'a' || key === 'A') state.keys.left = value;
+    if (key === 'ArrowRight' || key === 'd' || key === 'D') state.keys.right = value;
+    if (key === 'ArrowUp' || key === 'w' || key === 'W') state.keys.up = value;
+  }
+
+  window.addEventListener('keydown', (e) => {
+    setKey(e.key, true);
+    if (e.key === 'Enter') tryStart();
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', ' '].indexOf(e.key) !== -1) e.preventDefault();
+  });
+  window.addEventListener('keyup', (e) => setKey(e.key, false));
+
+  /* ---------- Secuencia de inicio / cuenta atrás ---------- */
+  const overlay       = document.getElementById('overlay');
+  const countdown     = document.getElementById('countdown');
+  const cdText        = document.getElementById('cdText');
+  const finishOverlay = document.getElementById('finishOverlay');
+  const flashEl       = document.getElementById('flash');
+  const strikeValueEl = document.getElementById('strikeValue');
+  let starting = false;
+
+  function tryStart() {
+    if (starting || state.started) return;
+    starting = true;
+    overlay.style.display = 'none';
+    countdown.style.display = 'flex';
+    // El clic/Enter es un gesto válido: arrancamos el motor.
+    startEngineAudio();
+    const seq = ['3', '2', '1', 'GO!'];
+    let i = 0;
+    cdText.textContent = seq[i];
+    const iv = setInterval(() => {
+      i++;
+      if (i >= seq.length) {
+        clearInterval(iv);
+        countdown.style.display = 'none';
+        state.started = true;
+        clock.getDelta(); // descarta el tiempo acumulado durante la cuenta atrás
+        return;
+      }
+      cdText.textContent = seq[i];
+    }, 700);
+  }
+  document.getElementById('startBtn').addEventListener('click', tryStart);
+  document.getElementById('restartBtn').addEventListener('click', () => location.reload());
+
+  /* ---------- Flash en pantalla al chocar con un semáforo ---------- */
+  let flashTimer = 0;
+  function flashScreen(kind) {
+    flashEl.classList.remove('red', 'yellow');
+    // Forzar reflow para reiniciar la transición
+    void flashEl.offsetWidth;
+    flashEl.classList.add(kind);
+    flashTimer = 0.35;
+  }
+
+  /* =========================================================
+     HUD
+  ========================================================= */
+  const speedValueEl = document.getElementById('speedValue');
+  const gaugeFillEl  = document.getElementById('gaugeFill');
+  const timeValueEl  = document.getElementById('timeValue');
+  const lapValueEl   = document.getElementById('lapValue');
+  const posValueEl   = document.getElementById('posValue');
+
+  function formatTime(t) {
+    const m = Math.floor(t / 60);
+    const s = Math.floor(t % 60);
+    const cs = Math.floor((t * 100) % 100);
+    const pad = (n, len) => String(n).padStart(len, '0');
+    return pad(m, 2) + ':' + pad(s, 2) + '.' + pad(cs, 2);
+  }
+
+  function updateHUD(rank) {
+    const kmh = Math.round(state.velocity * 2.6);
+    speedValueEl.textContent = String(kmh).padStart(3, '0');
+    gaugeFillEl.style.width = Math.min(100, (state.velocity / state.maxVelocity) * 100) + '%';
+    timeValueEl.textContent = formatTime(state.raceTime);
+    const lapShown = Math.min(state.lap, TOTAL_LAPS);
+    lapValueEl.textContent = 'VUELTA ' + lapShown + '/' + TOTAL_LAPS;
+    posValueEl.textContent = rank;
+    if (strikeValueEl) strikeValueEl.textContent = state.redStrikes;
+  }
+
+  /* =========================================================
+     SISTEMA DE IA — más rápido y con rubber-band más estricto
+  ========================================================= */
+  function wrap01(u) { return ((u % 1) + 1) % 1; }
+
+  function progressOf(o) { return o.lap + o.u; }
+
+  /* Tabla de posiciones unificada: finalizados primero (ordenados por tiempo),
+     luego los que siguen corriendo (ordenados por progreso). */
+  function buildRankings() {
+    const rows = [
+      { isPlayer: true,  name: 'TÚ', progress: progressOf(state),
+        finished: state.finished, finishTime: state.finishTime, color: '#00eaff' },
+      ...opponents.map(o => ({
+        isPlayer: false, name: o.name, progress: progressOf(o),
+        finished: o.finished, finishTime: o.finishTime,
+        color: '#' + o.c1.toString(16).padStart(6,'0')
+      }))
+    ];
+    rows.sort((a, b) => {
+      if (a.finished && b.finished) return a.finishTime - b.finishTime;
+      if (a.finished) return -1;
+      if (b.finished) return  1;
+      return b.progress - a.progress;
+    });
+    return rows;
+  }
+
+  function getPlayerRank() {
+    return buildRankings().findIndex(r => r.isPlayer) + 1;
+  }
+
+  function updateOpponents(delta, t) {
+    if (!state.started) return;
+
+    const playerProgress = state.lap + state.u;
+
+    opponents.forEach(opp => {
+      if (opp.finished) return;
+
+      const oppProgress = progressOf(opp);
+      const diff = oppProgress - playerProgress; // + si IA va delante del jugador
+
+      // Rubber-band más estricto — los IA NO ceden tanto cuando van detrás.
+      // Si van detrás del jugador no aceleran tanto como antes; si van
+      // delante, mantienen ritmo de competencia.
+      const rubber = THREE.MathUtils.clamp(-diff * 0.18, -0.15, 0.30);
+      const wobble = Math.sin(t * 2 + opp.phase) * 0.04;
+      opp.speed = THREE.MathUtils.clamp(opp.baseSpeed * (1 + rubber + wobble), 95, 185);
+
+      // Avance sobre la curva
+      opp.prevU = opp.u;
+      opp.u = wrap01(opp.u + (opp.speed * delta) / TRACK_LENGTH);
+
+      // Detección de cruce de meta
+      if (opp.prevU > 0.85 && opp.u < 0.15) {
+        opp.lap += 1;
+        if (opp.lap > TOTAL_LAPS) {
+          opp.finished = true;
+          opp.finishTime = state.raceTime;
+        }
+      }
+
+      // Movimiento lateral oscilante — cada piloto con su fase/frecuencia
+      const targetLat = Math.sin(t * opp.freq + opp.phase) * (MAX_LATERAL * 0.55) + opp.bias;
+      opp.lateralOffset += (targetLat - opp.lateralOffset) * delta * 2.5;
+      opp.lateralOffset = THREE.MathUtils.clamp(opp.lateralOffset, -MAX_LATERAL, MAX_LATERAL);
+    });
+  }
+
+  function placeOpponentsOnTrack(t) {
+    opponents.forEach(opp => {
+      const p   = trackCurve.getPointAt(opp.u);
+      const tan = trackCurve.getTangentAt(opp.u).normalize();
+      const right = new THREE.Vector3().crossVectors(tan, UP).normalize();
+      const bob = Math.sin(t * 6 + opp.phase * 3) * 0.08;
+      const pos = p.clone()
+        .addScaledVector(right, opp.lateralOffset)
+        .add(new THREE.Vector3(0, 1.3 + bob, 0));
+      opp.mesh.position.copy(pos);
+      opp.mesh.up.set(0, 1, 0);
+      opp.mesh.lookAt(pos.clone().add(tan));
+      // ligero alabeo cuando cambia de carril
+      const targetBank = Math.sin(t * opp.freq * 1.4 + opp.phase) * 0.18;
+      opp.mesh.rotation.z = THREE.MathUtils.lerp(opp.mesh.rotation.z, targetBank, 0.08);
+    });
+  }
+
+  /* =========================================================
+     COLISIONES jugador vs IA
+  ========================================================= */
+  function checkCollisions() {
+    const collisionDist = 3.6;
+    opponents.forEach(opp => {
+      if (opp.finished) return;
+      const dx = ship.position.x - opp.mesh.position.x;
+      const dy = ship.position.y - opp.mesh.position.y;
+      const dz = ship.position.z - opp.mesh.position.z;
+      const distSq = dx*dx + dy*dy + dz*dz;
+      if (distSq < collisionDist * collisionDist && distSq > 0.001) {
+        const dist = Math.sqrt(distSq);
+        state.velocity *= 0.94;
+        opp.speed     *= 0.96;
+        // pequeño empujón lateral para separarse
+        const nx = dx / dist, nz = dz / dist;
+        state.lateralOffset += nx * 1.4;
+        opp.lateralOffset   -= nx * 1.4;
+      }
+    });
+  }
+
+  /* =========================================================
+     COLISIONES jugador vs SEMÁFOROS
+     Cada semáforo tiene un cooldown corto para no contar
+     varios choques si el jugador se queda pegado a la luz.
+  ========================================================= */
+  function checkSemaphoreCollisions() {
+    semaphores.forEach(sem => {
+      if (sem.hitCooldown > 0) return;
+      const dx = ship.position.x - sem.mesh.position.x;
+      const dz = ship.position.z - sem.mesh.position.z;
+      const distSq = dx*dx + dz*dz;
+      if (distSq < SEMAPHORE_HIT_RADIUS * SEMAPHORE_HIT_RADIUS) {
+        if (sem.state === 'red') {
+          state.velocity *= SEMAPHORE_PENALTY_RED;
+          state.redStrikes += 1;
+          flashScreen('red');
+        } else if (sem.state === 'yellow') {
+          state.velocity *= SEMAPHORE_PENALTY_YELLOW;
+          flashScreen('yellow');
+        }
+        // verde → no hay penalización
+        sem.hitCooldown = 0.8;
+      }
+    });
+  }
+
+/* =========================================================
+		     COLISIONES vs OBSTÁCULOS
+	  ========================================================= */
+	    function checkObstacleCollisions(delta) {
+	        obstacles.forEach(obs => {
+			      // Reducir el tiempo de inmunidad por cuadro
+			      if (obs.hitCooldown > 0) obs.hitCooldown = Math.max(0, obs.hitCooldown - delta);
+
+			      // 1. Colisión con el Jugador Principal
+			      if (obs.hitCooldown === 0) {
+				              const dxPlayer = ship.position.x - obs.mesh.position.x;
+				              const dzPlayer = ship.position.z - obs.mesh.position.z;
+				              const distSqPlayer = dxPlayer * dxPlayer + dzPlayer * dzPlayer;
+
+				              if (distSqPlayer < OBSTACLE_HIT_RADIUS * OBSTACLE_HIT_RADIUS) {
+						                state.velocity *= OBSTACLE_PENALTY; // Frenazo al jugador
+						                flashScreen('yellow');              // Reutiliza el destello amarillo visual
+						                
+						                // Empujón lateral sutil para evitar quedarse atascado dentro del objeto
+						                state.lateralOffset += (dxPlayer > 0 ? 1.5 : -1.5);
+						                obs.hitCooldown = 0.8; // Cooldown de casi 1 segundo
+						              }
+				            }
+
+			      // 2. Colisión con los Oponentes (IA)
+			      opponents.forEach(opp => {
+				              if (opp.finished) return;
+				              const dxOpp = opp.mesh.position.x - obs.mesh.position.x;
+				              const dzOpp = opp.mesh.position.z - obs.mesh.position.z;
+				              const distSqOpp = dxOpp * dxOpp + dzOpp * dzOpp;
+
+				              if (distSqOpp < OBSTACLE_HIT_RADIUS * OBSTACLE_HIT_RADIUS) {
+						                opp.speed *= OBSTACLE_PENALTY; // Frena también a la IA
+						                opp.lateralOffset += (dxOpp > 0 ? 1.2 : -1.2);
+						              }
+				            });
+			    });
+		      }
+
+  /* =========================================================
+     ACTUALIZACIÓN DE SEMÁFOROS — ciclo y luz activa
+  ========================================================= */
+  function updateSemaphores(t, delta) {
+    semaphores.forEach(sem => {
+      const tt = ((t + sem.phase) % SEMAPHORE_CYCLE + SEMAPHORE_CYCLE) % SEMAPHORE_CYCLE;
+      if      (tt < SEMAPHORE_RED_END)    sem.state = 'red';
+      else if (tt < SEMAPHORE_YELLOW_END) sem.state = 'yellow';
+      else                                sem.state = 'green';
+
+      const onEm  = 2.6;
+      const offEm = 0.10;
+      if (sem.lights.red) {
+        sem.lights.red.emissiveIntensity    = (sem.state === 'red')    ? onEm : offEm;
+      }
+      if (sem.lights.yellow) {
+        sem.lights.yellow.emissiveIntensity = (sem.state === 'yellow') ? onEm : offEm;
+      }
+      if (sem.lights.green) {
+        sem.lights.green.emissiveIntensity  = (sem.state === 'green')  ? onEm : offEm;
+      }
+
+      if (sem.hitCooldown > 0) sem.hitCooldown = Math.max(0, sem.hitCooldown - delta);
+    });
+  }
+
+  /* =========================================================
+     PANTALLA DE RESULTADOS
+  ========================================================= */
+  function showFinishScreen() {
+    const rows = buildRankings();
+    const playerRank = rows.findIndex(r => r.isPlayer) + 1;
+
+    const body = document.getElementById('rankingsBody');
+    body.innerHTML = rows.map((r, i) => {
+      const timeStr = r.finished ? formatTime(r.finishTime) : '— EN CURSO';
+      const cls = [
+        r.isPlayer ? 'highlight' : '',
+        !r.finished ? 'racing' : ''
+      ].filter(Boolean).join(' ');
+      return `<tr class="${cls}">
+        <td class="pos-col">${i+1}</td>
+        <td class="pilot-col" style="color:${r.color}">${r.name}</td>
+        <td class="time-col">${timeStr}</td>
+      </tr>`;
+    }).join('');
+
+    const title = document.getElementById('finishTitle');
+    title.classList.remove('win', 'podium', 'lose');
+    if (playerRank === 1) {
+      title.textContent = '¡VICTORIA!';
+      title.classList.add('win');
+      document.getElementById('finishSubtitle').textContent = 'PRIMER PUESTO';
+    } else if (playerRank <= 3) {
+      title.textContent = 'PODIO · POS ' + playerRank;
+      title.classList.add('podium');
+      document.getElementById('finishSubtitle').textContent = 'EN EL PODIO';
+    } else {
+      title.textContent = 'CARRERA FINALIZADA';
+      title.classList.add('lose');
+      document.getElementById('finishSubtitle').textContent = 'POSICIÓN FINAL ' + playerRank + ' / ' + TOTAL_RACERS;
+    }
+
+    finishOverlay.classList.add('visible');
+  }
+
+  /* =========================================================
+     MINIMAPA / RADAR
+  ========================================================= */
+  const minimap = document.getElementById('minimap');
+  const mctx    = minimap.getContext('2d');
+  const MAP_SIZE = minimap.width;
+
+  // Caja de proyección 2D de la pista (top-down)
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let i = 0; i < SAMPLES; i++) {
+    if (centerPts[i].x < minX) minX = centerPts[i].x;
+    if (centerPts[i].x > maxX) maxX = centerPts[i].x;
+    if (centerPts[i].z < minZ) minZ = centerPts[i].z;
+    if (centerPts[i].z > maxZ) maxZ = centerPts[i].z;
+  }
+  const trackCx = (minX + maxX) / 2;
+  const trackCz = (minZ + maxZ) / 2;
+  const trackRange = Math.max(maxX - minX, maxZ - minZ) * 0.55;
+
+  function project(x, z) {
+    return {
+      x: MAP_SIZE / 2 + ((x - trackCx) / trackRange) * (MAP_SIZE / 2 - 6),
+      y: MAP_SIZE / 2 + ((z - trackCz) / trackRange) * (MAP_SIZE / 2 - 6)
+    };
+  }
+
+  function drawMinimap() {
+    mctx.clearRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+    // fondo
+    mctx.fillStyle = 'rgba(8,6,26,0.85)';
+    mctx.fillRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+    // borde de pista
+    mctx.strokeStyle = 'rgba(127,163,255,0.55)';
+    mctx.lineWidth = 4;
+    mctx.beginPath();
+    for (let i = 0; i <= SAMPLES; i++) {
+      const idx = i % SAMPLES;
+      const pp = project(centerPts[idx].x, centerPts[idx].z);
+      if (i === 0) mctx.moveTo(pp.x, pp.y); else mctx.lineTo(pp.x, pp.y);
+    }
+    mctx.closePath();
+    mctx.stroke();
+
+    // línea de meta
+    const fp = project(centerPts[0].x, centerPts[0].z);
+    mctx.fillStyle = '#ff2079';
+    mctx.fillRect(fp.x - 4, fp.y - 4, 8, 8);
+
+    // semáforos
+    semaphores.forEach(sem => {
+      const pp = project(sem.mesh.position.x, sem.mesh.position.z);
+      let color = '#888888';
+      if (sem.state === 'red')        color = '#ff2079';
+      else if (sem.state === 'yellow') color = '#ffd60a';
+      else                              color = '#44ff88';
+      mctx.fillStyle = color;
+      mctx.beginPath();
+      mctx.rect(pp.x - 3, pp.y - 3, 6, 6);
+      mctx.fill();
+    });
+
+    // puntos de los oponentes
+    opponents.forEach(opp => {
+      const p = trackCurve.getPointAt(opp.u);
+      const tan = trackCurve.getTangentAt(opp.u).normalize();
+      const right = new THREE.Vector3().crossVectors(tan, UP).normalize();
+      const lat = p.clone().addScaledVector(right, opp.lateralOffset);
+      const pp = project(lat.x, lat.z);
+      mctx.fillStyle = opp.finished ? '#8fa6c2' : '#' + opp.c1.toString(16).padStart(6,'0');
+      mctx.beginPath();
+      mctx.arc(pp.x, pp.y, opp.finished ? 2.5 : 3.5, 0, Math.PI * 2);
+      mctx.fill();
+    });
+
+// Dibujar obstáculos en el radar (círculos de color naranja/ámbar fijo)
+	      obstacles.forEach(obs => {
+		            const pp = project(obs.mesh.position.x, obs.mesh.position.z);
+		            mctx.fillStyle = '#ffd60a'; 
+		            mctx.beginPath();
+		            mctx.arc(pp.x, pp.y, 2, 0, Math.PI * 2);
+		            mctx.fill();
+		          });
+
+    // punto del jugador (con halo)
+    const pp = project(ship.position.x, ship.position.z);
+    mctx.fillStyle = 'rgba(0,234,255,0.35)';
+    mctx.beginPath();
+    mctx.arc(pp.x, pp.y, 8, 0, Math.PI * 2);
+    mctx.fill();
+    mctx.fillStyle = '#00eaff';
+    mctx.beginPath();
+    mctx.arc(pp.x, pp.y, 4.5, 0, Math.PI * 2);
+    mctx.fill();
+  }
+
+  /* =========================================================
+     BUCLE DE ANIMACIÓN
+  ========================================================= */
+  const clock = new THREE.Clock();
+
+  // Colocación inicial: nave + IA en la parrilla (se llama tras cargar el .glb)
+  function doInitialPlacement() {
+    const p0 = trackCurve.getPointAt(0);
+    const t0 = trackCurve.getTangentAt(0).normalize();
+    ship.position.copy(p0).add(new THREE.Vector3(0, 1.3, 0));
+    camera.position.copy(p0).addScaledVector(t0, -9).add(new THREE.Vector3(0, 4.4, 0));
+    camera.lookAt(p0.clone().addScaledVector(t0, 10).add(new THREE.Vector3(0, 1.4, 0)));
+    placeOpponentsOnTrack(0);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const delta = Math.min(clock.getDelta(), 0.05);
+    const t = clock.elapsedTime;
+
+    // Pulso de los paneles de velocidad
+    arrowMeshes.forEach((m, i) => {
+      m.material.opacity = 0.5 + 0.45 * Math.sin(t * 4 + i);
+    });
+
+    // Actualizar animación de la hélice (jugador + IA)
+    if (playerMixer) playerMixer.update(delta);
+    for (let i = 0; i < opponentMixers.length; i++) opponentMixers[i].update(delta);
+
+    if (state.started && !state.finished) {
+      state.raceTime += delta;
+
+      // Aceleración / fricción
+      if (state.keys.up) {
+        state.velocity = Math.min(state.maxVelocity, state.velocity + state.accel * delta);
+      } else {
+        state.velocity = Math.max(0, state.velocity - state.friction * delta);
+      }
+
+      // Movimiento lateral
+      let lateralInput = 0;
+      if (state.keys.left)  lateralInput -= 1;
+      if (state.keys.right) lateralInput += 1;
+      state.lateralOffset += lateralInput * state.lateralSpeed * delta;
+
+      // Límites laterales de la pista
+      let hitWall = false;
+      if (state.lateralOffset >  MAX_LATERAL) { state.lateralOffset =  MAX_LATERAL; hitWall = true; }
+      if (state.lateralOffset < -MAX_LATERAL) { state.lateralOffset = -MAX_LATERAL; hitWall = true; }
+      if (hitWall) state.velocity *= 0.992;
+
+      // Avance a lo largo de la curva
+      state.prevU = state.u;
+      state.u = wrap01(state.u + (state.velocity * delta) / TRACK_LENGTH);
+      if (state.prevU > 0.85 && state.u < 0.15) {
+        state.lap += 1;
+        if (state.lap > TOTAL_LAPS) {
+          state.finished = true;
+          state.finishTime = state.raceTime;
+          // congela controles suavemente
+        }
+      }
+    } else if (state.finished) {
+      // El jugador terminó: se frena con suavidad, pero la cámara sigue en escena
+      state.velocity = Math.max(0, state.velocity - state.friction * delta * 0.6);
+    }
+
+    // Actualizar rivales, semáforos y comprobar colisiones
+    updateOpponents(delta, t);
+    updateSemaphores(t, delta);
+    placeOpponentsOnTrack(t);
+    if (state.started) {
+      checkCollisions();
+      checkSemaphoreCollisions();
+	checkObstacleCollisions(delta);
+    }
+
+    // Posicionar nave del jugador
+    const u = wrap01(state.u);
+    const point   = trackCurve.getPointAt(u);
+    const tangent = trackCurve.getTangentAt(u).normalize();
+    const right   = new THREE.Vector3().crossVectors(tangent, UP).normalize();
+
+    const hoverBob = Math.sin(t * 6) * 0.08;
+    const shipPos = point.clone()
+      .addScaledVector(right, state.lateralOffset)
+      .add(new THREE.Vector3(0, 1.3 + hoverBob, 0));
+    ship.position.copy(shipPos);
+
+    ship.up.set(0, 1, 0);
+    ship.lookAt(shipPos.clone().add(tangent));
+    const bankTarget = state.keys.left ? 0.32 : (state.keys.right ? -0.32 : 0);
+    ship.rotation.z = THREE.MathUtils.lerp(ship.rotation.z, bankTarget, 0.15);
+
+    // Cámara en tercera persona
+    const camTarget = shipPos.clone().addScaledVector(tangent, -9).add(new THREE.Vector3(0, 4.4, 0));
+    camera.position.lerp(camTarget, 0.09);
+    const lookTarget = shipPos.clone().addScaledVector(tangent, 10).add(new THREE.Vector3(0, 1.4, 0));
+    camera.lookAt(lookTarget);
+
+    // Streaks
+    streakAnchor.position.copy(shipPos);
+    streakAnchor.quaternion.copy(ship.quaternion);
+    updateStreaks(delta, state.velocity / state.maxVelocity);
+
+    // Flash de colisión
+    if (flashTimer > 0) {
+      flashTimer = Math.max(0, flashTimer - delta);
+      if (flashTimer <= 0) {
+        flashEl.classList.remove('red', 'yellow');
+      }
+    }
+
+    // Audio del motor
+    updateEngineAudio();
+
+    // HUD + radar
+    updateHUD(getPlayerRank());
+    drawMinimap();
+
+    // Mostrar pantalla de fin (cuando el jugador cruza la meta por última vez)
+    if (state.finished && !finishOverlay.classList.contains('visible')) {
+      // pequeño retardo para que el jugador vea cruzar la línea
+      setTimeout(showFinishScreen, 600);
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  /* =========================================================
+     ARRANQUE: cargar .glb(s), crear naves/semáforos, pintar roster,
+     configurar motor de audio y arrancar.
+  ========================================================= */
+Promise.all([
+    loadPlayerModel(MODEL_URL),
+    loadSemaphore(SEMAPHORE_URL),
+    loadObstacle(OBSTACLE_URL) // <--- Nueva carga agregada
+  ]).then(([playerGltf, semTemplate, obsTemplate]) => {
+    // ---------- Jugador ----------
+    ship = buildShipFromModel(playerGltf.scene, 0x00eaff, 0xb829f7);
+    scene.add(ship);
+
+    // AnimationMixer del jugador
+    if (playerGltf.animations && playerGltf.animations.length > 0) {
+      playerMixer = new THREE.AnimationMixer(ship);
+      const clip = playerGltf.animations[0];
+      const action = playerMixer.clipAction(clip);
+      action.setLoop(THREE.LoopRepeat, Infinity);
+      action.play();
+    }
+
+    // ---------- Oponentes (IA) ----------
+    opponents = OPPONENT_DEFS.map((cfg, i) => {
+      const mesh = buildShipFromModel(playerGltf.scene, cfg.c1, cfg.c2);
+      scene.add(mesh);
+
+      let mixer = null;
+      if (playerGltf.animations && playerGltf.animations.length > 0) {
+        mixer = new THREE.AnimationMixer(mesh);
+        const a = mixer.clipAction(playerGltf.animations[0]);
+        a.setLoop(THREE.LoopRepeat, Infinity);
+        a.play();
+      }
+      opponentMixers.push(mixer);
+
+      return {
+        ...cfg,
+        mesh,
+        u: 0,                                  // parrilla de salida
+        lateralOffset: (i - 1.5) * 4.0,        // 4 carriles más espaciados
+        targetLateral: 0,
+        speed: cfg.baseSpeed,
+        lap: 1,
+        finished: false,
+        finishTime: 0,
+        prevU: 0
+      };
+    });
+
+    // ---------- Semáforos en la pista ----------
+    // 6 unidades alternando lados de la pista, con fases distintas
+    const semDefs = [
+      { u: 0.10, side:  1, phase: 0.0 },
+      { u: 0.27, side: -1, phase: 1.7 },
+      { u: 0.43, side:  1, phase: 3.2 },
+      { u: 0.61, side: -1, phase: 4.8 },
+      { u: 0.78, side:  1, phase: 2.1 },
+      { u: 0.92, side: -1, phase: 5.5 }
+    ];
+
+    semDefs.forEach(cfg => {
+      const built = buildSemaphore(semTemplate);
+      const p   = trackCurve.getPointAt(cfg.u);
+      const tan = trackCurve.getTangentAt(cfg.u).normalize();
+      const rgt = new THREE.Vector3().crossVectors(tan, UP).normalize();
+
+      // Colocar cerca del borde interno de la pista (no en el borde extremo)
+      const sideOffset = cfg.side * (HALF_WIDTH - 4.2);
+
+      built.mesh.position.copy(p).addScaledVector(rgt, sideOffset);
+      // Asentar en el suelo (levantar la base del poste) y orientar hacia el centro
+      built.mesh.up.set(0, 1, 0);
+      built.mesh.lookAt(built.mesh.position.clone().add(rgt.clone().multiplyScalar(-cfg.side)));
+      built.mesh.scale.set(2.4, 2.4, 2.4);
+      scene.add(built.mesh);
+
+      semaphores.push({
+        mesh: built.mesh,
+        lights: built.lights,
+        u: cfg.u,
+        side: cfg.side,
+        phase: cfg.phase,
+        state: 'red',
+        hitCooldown: 0
+      });
+    });
+
+// ---------- Obstáculos en la pista ----------
+	      // Posiciones 'u' (0 a 1) y desplazamiento lateral ('lat': -MAX_LATERAL a MAX_LATERAL)
+	      const obsDefs = [
+		            { u: 0.18, lat: 0 },         // Justo en el centro
+		            { u: 0.35, lat: -6.0 },      // Lateral izquierdo
+		            { u: 0.52, lat: 5.5 },       // Lateral derecho
+		            { u: 0.70, lat: -2.0 },      // Centro-izquierdo
+		            { u: 0.85, lat: 4.0 }        // Centro-derecho
+		          ];
+
+	      obsDefs.forEach(cfg => {
+		            const mesh = buildObstacle(obsTemplate);
+		            const p = trackCurve.getPointAt(cfg.u);
+		            const tan = trackCurve.getTangentAt(cfg.u).normalize();
+		            const rgt = new THREE.Vector3().crossVectors(tan, UP).normalize();
+
+		            // Posicionamiento físico en base a la curva y su desplazamiento lateral
+		            mesh.position.copy(p).addScaledVector(rgt, cfg.lat);
+		            mesh.up.set(0, 1, 0);
+		            mesh.lookAt(mesh.position.clone().add(tan)); // Orientado hacia el frente de la pista
+		            
+		            // Ajusta la escala según consideres (el modelo original suele variar de escala)
+		            mesh.scale.set(1.5, 1.5, 1.5); 
+		            scene.add(mesh);
+
+		            obstacles.push({
+				            mesh: mesh,
+				            u: cfg.u,
+				            lat: cfg.lat,
+				            hitCooldown: 0
+				          });
+		          });
+
+    paintRoster();
+    doInitialPlacement();
+
+    // Cargar audio en segundo plano. La decodificación es async, así que
+    // estará lista para cuando se pulse INICIAR.
+    setupEngineAudio(ENGINE_AUDIO_URL);
+
+    animate();
+  }).catch(err => {
+    console.error('No se pudo cargar algún modelo:', err);
+    const ov = document.getElementById('overlay');
+    ov.innerHTML =
+      '<h1 style="color:#ff2079">ERROR DE CARGA</h1>' +
+      '<p class="tag">No se encontró <code style="color:#fff">' + MODEL_URL +
+      '</code> o <code style="color:#fff">' + SEMAPHORE_URL + '</code></p>' +
+      '<p style="color:#bfe9ff;font-size:12px;letter-spacing:2px">' +
+      'Asegúrate de que estén en la misma carpeta que el HTML y recarga la página.</p>';
+  });
+})();
+</script>
+</body>
+</html>
