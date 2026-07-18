@@ -178,196 +178,44 @@
         playerContainer.add(shieldMesh);
 
         // ------------------------------------------------------------
-        // Clases de Entidades (Jugador / Enemigo)
+        // Jugador (objeto literal, mismo shape que tu código original)
         // ------------------------------------------------------------
-        // Patrón: cada entidad tiene su propio THREE.Group (container),
-        // su propio modelo clonado (meshModel) y su propio AnimationMixer
-        // vinculado a su propio esqueleto, de modo que las animaciones
-        // son independientes entre instancias.
-        class Entidad {
-            constructor({ container, meshModel, animations, clipsMap = null }) {
-                this.container = container;
-                this.meshModel = meshModel;
-                this.animations = animations || [];
-                this.clipsPorNombre = clipsMap || this._buildClipsMap(this.animations);
-                this.animData = null;          // { mixer, action, speed, clipName }
-                this.animSpeedTarget = 1.0;
-                if (meshModel && this.animations.length) {
-                    this.animData = this._crearAnimData(this.animations[0].name, { loop: true });
-                }
-            }
-
-            _buildClipsMap(animations) {
-                const map = {};
-                animations.forEach(c => { map[c.name] = c; });
-                return map;
-            }
-
-            // Crea un AnimationMixer anclado al modelo clonado y reproduce el clip indicado.
-            // loop = true → loop infinito, false → una vez.
-            _crearAnimData(clipName, { loop = true, reset = true } = {}) {
-                if (!this.meshModel) return null;
-                const clip = this.clipsPorNombre[clipName] || this.animations[0];
-                if (!clip) {
-                    console.warn(`[Entidad] No hay clip de animación disponible.`);
-                    return null;
-                }
-                const mixer = new THREE.AnimationMixer(this.meshModel);
-                const action = mixer.clipAction(clip);
-                action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
-                action.clampWhenFinished = !loop;
-                if (reset) action.reset();
-                action.play();
-                console.log(`🎬 [${this.constructor.name}] clip "${clip.name}" (loop=${loop})`);
-                return { mixer, action, speed: 1.0, clipName: clip.name };
-            }
-
-            // API pública: cambia la animación por nombre. Si ya existía un mixer, lo destruye.
-            setAnimacion(clipName, { loop = true, reset = true } = {}) {
-                if (this.animData && this.animData.mixer) this.animData.mixer.stopAllAction();
-                this.animData = this._crearAnimData(clipName, { loop, reset });
-            }
-
-            // Avanza el mixer respetando el speed objetivo (idle vs. en movimiento).
-            updateAnimacion(delta) {
-                if (!this.animData) return;
-                this.animData.speed += (this.animSpeedTarget - this.animData.speed) * 0.1;
-                this.animData.mixer.update(delta * this.animData.speed);
-            }
-
-            setVelocidadAnimacion(target) { this.animSpeedTarget = target; }
-
-            dispose() {
-                if (this.animData && this.animData.mixer) this.animData.mixer.stopAllAction();
-                if (this.meshModel && this.meshModel.parent) this.meshModel.parent.remove(this.meshModel);
-                if (this.container && this.container.parent) this.container.parent.remove(this.container);
-            }
-        }
-
-        class Jugador extends Entidad {
-            constructor(opts) {
-                super(opts);
-                this.lives = 3;
-                this.maxLives = 3;
-                this.shield = 100;
-                this.maxShield = 100;
-                this.health = 100;
-                this.maxHealth = 100;
-                this.shieldRegenRate = 15;
-                this.shieldRegenDelay = 3.0;
-                this.timeSinceLastHit = 0;
-                this.speed = 16;
-                this.score = 0;
-                this.rotationY = Math.PI;
-                this.pitch = 0;
-                this.shootCooldown = 0.25;
-                this.lastShotTime = 0;
-                this.isHitBlinking = 0;
-                this.isDead = false;
-                this.shieldMesh = shieldMesh; // referencia compartida (decorativa)
-            }
-        }
-
-        class Enemigo extends Entidad {
-            constructor(opts) {
-                super(opts);
-                this.maxHealth = 4;
-                this.health = this.maxHealth;
-                this.lastShot = 0;
-                this.shootInterval = 1.2 + Math.random() * 1.5;
-                this.speed = 7 + Math.random() * 3;
-                this.radius = 1.5;
-                this.dead = false;
-
-                // Barra de vida (child del container para que herede transform)
-                this.healthBar = new THREE.Mesh(
-                    new THREE.BoxGeometry(1.5, 0.15, 0.1),
-                    new THREE.MeshBasicMaterial({ color: 0xff0000 })
-                );
-                this.healthBar.position.set(0, 3.4, 0);
-                this.container.add(this.healthBar);
-            }
-
-            takeDamage(n = 1) {
-                if (this.dead) return false;
-                this.health -= n;
-                this._refreshHealthBar();
-                if (this.health <= 0) {
-                    this.dead = true;
-                    return true; // muerto
-                }
-                return false;
-            }
-
-            _refreshHealthBar() {
-                this.healthBar.scale.x = Math.max(0, this.health / this.maxHealth);
-            }
-
-            // IA: perseguiir / mantener distancia / disparar al jugador
-            iaUpdate(player, delta, nowSec) {
-                if (this.dead) return null; // devuelve acción de disparo si la hay
-                const toPlayer = player.container.position.clone().sub(this.container.position);
-                const dist = toPlayer.length();
-                let isMoving = false;
-                if (dist > 18) {
-                    this.container.position.addScaledVector(toPlayer.clone().normalize().setY(0), this.speed * delta);
-                    isMoving = true;
-                } else if (dist < 8) {
-                    this.container.position.addScaledVector(toPlayer.clone().normalize().multiplyScalar(-1).setY(0), this.speed * 0.5 * delta);
-                    isMoving = true;
-                }
-                // Mirar al jugador (solo Y)
-                this.container.lookAt(player.container.position.x, this.container.position.y, player.container.position.z);
-
-                this.setVelocidadAnimacion(isMoving ? 2.5 : 1.0);
-                this.updateAnimacion(delta);
-
-                // Disparo
-                if (!player.isDead && dist < 45 && (nowSec - this.lastShot) > this.shootInterval) {
-                    this.lastShot = nowSec;
-                    const shootDir = toPlayer.clone().normalize();
-                    shootDir.x += (Math.random() - 0.5) * 0.15;
-                    shootDir.z += (Math.random() - 0.5) * 0.15;
-                    return shootDir;
-                }
-                return null;
-            }
-
-            // Billboard de la barra de vida (que siempre mire a la cámara)
-            updateHealthBarBillboard(camera) {
-                this.healthBar.quaternion.copy(camera.quaternion);
-            }
-
-            // Colisión contra obstáculos (mismo patrón que el jugador)
-            resolverObstaculos(obstaculos) {
-                obstaclesLoop: for (const obs of obstaculos) {
-                    const d = this.container.position.distanceTo(obs.mesh.position);
-                    if (d < obs.radius + 1.2) {
-                        const pushDir = this.container.position.clone().sub(obs.mesh.position).setY(0).normalize();
-                        this.container.position.addScaledVector(pushDir, (obs.radius + 1.2) - d);
-                    }
-                }
-            }
-        }
-
-        // Instancia singleton del jugador (mismo shape que el código previo,
-        // pero ahora es una clase real, no un objeto literal suelto).
-        const player = new Jugador({
+        const player = {
             container: playerContainer,
             meshModel: null,
-            animations: []
-        });
+            animData: null,                  // { mixer, action, speed, clipName } propio
+            shieldMesh,
+            lives:3, maxLives:3,
+            shield:100, maxShield:100,
+            health:100, maxHealth:100,
+            shieldRegenRate:15, shieldRegenDelay:3.0, timeSinceLastHit:0,
+            speed:16, score:0,
+            rotationY: Math.PI, pitch:0,
+            shootCooldown:0.25, lastShotTime:0,
+            isHitBlinking:0, isDead:false
+        };
 
         const keys = { w:false, a:false, s:false, d:false };
 
         // ------------------------------------------------------------
-        // Modelos independientes
+        // Assets: dos GLB independientes
+        //   - mech.glb   → jugador (un único modelo, sin clonar)
+        //   - mech_03.glb → enemigo  (un asset, se clona con SkeletonUtils
+        //                              por cada spawn, porque cada enemigo
+        //                              necesita su propia jerarquía de huesos
+        //                              y su propio AnimationMixer)
+        //
+        //   Esto soluciona el bug "solo un enemigo anima": cuando se
+        //   compartía la MISMA referencia Object3D entre varios containers,
+        //   los PropertyBinding del mixer se quedaban apuntando a la
+        //   jerarquía vieja al reasignar el padre.
         // ------------------------------------------------------------
-        let playerModelAsset = null;   // para el jugador (original, sin clonar)
-        let enemyModelAsset = null;    // para los enemigos (se clonará)
-        let globalAnimations = [];     // animaciones (se usarán para ambos)
+        let playerModelAsset = null;
+        let playerAnimations = [];
+        let enemyModelAsset  = null;
+        let enemyAnimations  = [];
         let playerModelReady = false;
-        let enemyModelReady = false;
+        let enemyModelReady  = false;
 
         // ------------------------------------------------------------
         // Modelo procedural (fallback)
@@ -392,12 +240,13 @@
         }
 
         // ------------------------------------------------------------
-        // Configurar animación (helper legacy; la lógica real vive en Entidad)
+        // Helper: crea un AnimationMixer para un modelo y reproduce el clip
         // ------------------------------------------------------------
         function setupAnimationsSimple(model, animations){
             if(!animations || animations.length===0){ console.warn('No hay animaciones.'); return null; }
             const mixer = new THREE.AnimationMixer(model);
             const action = mixer.clipAction(animations[0]);
+            action.setLoop(THREE.LoopRepeat, Infinity);
             action.play();
             console.log(`🎬 Animación "${animations[0].name}" iniciada en modelo ${model.uuid}.`);
             return { mixer, action, speed:1.0, clipName: animations[0].name };
@@ -413,85 +262,79 @@
                 player.meshModel=null;
                 player.animData=null;
             }
-            let newModel, animData=null;
+            let newModel;
             if(playerModelAsset){
                 newModel = playerModelAsset;
                 newModel.scale.set(0.6,0.6,0.6);
                 newModel.traverse(child=>{ if(child.isMesh){ child.castShadow=true; child.receiveShadow=true; if(child.material) child.material=child.material.clone(); } });
-                // A través de la clase para mantener la API unificada
-                player.meshModel = newModel;
-                player.animations = globalAnimations;
-                player.clipsPorNombre = player._buildClipsMap(globalAnimations);
-                player.animData = player._crearAnimData(globalAnimations[0].name, { loop: true });
-                console.log('✅ Jugador: modelo GLB asignado (sin clonar).');
+                if(playerAnimations.length){
+                    const mixer = new THREE.AnimationMixer(newModel);
+                    const action = mixer.clipAction(playerAnimations[0]);
+                    action.setLoop(THREE.LoopRepeat, Infinity);
+                    action.play();
+                    player.animData = { mixer, action, speed: 1.0, clipName: playerAnimations[0].name };
+                    console.log(`✅ Jugador: modelo GLB + mixer propio + clip "${playerAnimations[0].name}"`);
+                } else {
+                    player.animData = null;
+                }
             } else {
                 newModel = createProceduralMech(false);
-                player.meshModel = newModel;
-                player.animations = [];
-                player.clipsPorNombre = {};
                 player.animData = null;
-                console.warn('⚠️ Jugador: modelo procedural.');
+                console.warn('⚠️ Jugador: modelo procedural (sin animación).');
             }
+            player.meshModel = newModel;
             player.container.add(newModel);
         }
 
         // ------------------------------------------------------------
-        // Cargar modelos (dos cargas separadas)
+        // Carga de los dos GLB
+        //   - Se hacen en paralelo: cada loader resuelve su propio callback.
+        //   - `playerModelReady` controla el inicio del jugador.
+        //   - `enemyModelReady`  controla cuándo se pueden spawnear enemigos.
         // ------------------------------------------------------------
-        const loaderPlayer = new THREE.GLTFLoader();
-        const loaderEnemy = new THREE.GLTFLoader();
-
-        // Rutas (puedes cambiarlas independientemente)
+        const gltfLoader = new THREE.GLTFLoader();
         const PLAYER_MODEL_PATH = 'mech.glb';
-        const ENEMY_MODEL_PATH = 'mech.glb';  // En el futuro, pon otro archivo
+        const ENEMY_MODEL_PATH  = 'mech_03.glb';
 
         document.getElementById('status-msg').style.display='block';
-        document.getElementById('status-msg').innerText='Cargando modelo del jugador...';
+        document.getElementById('status-msg').innerText='Cargando modelos...';
 
-        // Carga del jugador
-        loaderPlayer.load(PLAYER_MODEL_PATH, function(gltf){
+        // Carga del modelo del jugador
+        gltfLoader.load(PLAYER_MODEL_PATH, function(gltf){
             console.log('✅ Modelo del jugador cargado.');
             console.log(`   Animaciones: ${gltf.animations.length}`);
             gltf.animations.forEach((c,i)=>console.log(`   [${i}] "${c.name}"`));
             playerModelAsset = gltf.scene;
-            globalAnimations = gltf.animations;
+            playerAnimations = gltf.animations;
             playerModelReady = true;
             initializePlayerModel();
-            document.getElementById('status-msg').innerText='Modelo jugador listo. Cargando enemigos...';
-
-            // Ahora cargar el modelo de enemigos (independiente)
-            loaderEnemy.load(ENEMY_MODEL_PATH, function(gltf2){
-                console.log('✅ Modelo de enemigos cargado.');
-                console.log(`   Animaciones: ${gltf2.animations.length}`);
-                enemyModelAsset = gltf2.scene;
-                enemyModelReady = true;
-                document.getElementById('status-msg').style.display='none';
-                // Si hay enemigos esperando, ahora se pueden crear
-                // (pero como el juego empieza después, no hay problema)
-            }, undefined, function(error){
-                console.error('❌ Error al cargar modelo de enemigos:', error);
-                // Fallback: usar el modelo del jugador (pero puede que no funcione)
-                enemyModelAsset = playerModelAsset;
-                enemyModelReady = true;
-                document.getElementById('status-msg').style.display='none';
-            });
+            document.getElementById('status-msg').innerText='Jugador listo. Cargando enemigo...';
         }, undefined, function(error){
             console.error('❌ Error al cargar modelo del jugador:', error);
-            document.getElementById('status-msg').innerText='Error en modelo jugador. Usando fallback.';
+            document.getElementById('status-msg').innerText='Error en jugador. Usando fallback.';
+            playerModelReady = true;
             initializePlayerModel();
-            // Intentar cargar enemigos igual
-            loaderEnemy.load(ENEMY_MODEL_PATH, function(gltf2){
-                enemyModelAsset = gltf2.scene;
-                enemyModelReady = true;
-                document.getElementById('status-msg').style.display='none';
-            }, undefined, function(){
-                enemyModelAsset = null;
-                enemyModelReady = true;
-                document.getElementById('status-msg').style.display='none';
-            });
         });
 
-        // Inicialización temprana con fallback (por si tarda)
+        // Carga del modelo del enemigo (independiente, en paralelo)
+        gltfLoader.load(ENEMY_MODEL_PATH, function(gltf){
+            console.log('✅ Modelo del enemigo cargado.');
+            console.log(`   Animaciones: ${gltf.animations.length}`);
+            gltf.animations.forEach((c,i)=>console.log(`   [${i}] "${c.name}"`));
+            enemyModelAsset = gltf.scene;
+            enemyAnimations = gltf.animations;
+            enemyModelReady = true;
+            if(playerModelReady) document.getElementById('status-msg').style.display='none';
+        }, undefined, function(error){
+            console.error('❌ Error al cargar modelo del enemigo:', error);
+            document.getElementById('status-msg').innerText='Error en enemigo. Usando fallback procedural.';
+            enemyModelAsset = null;
+            enemyAnimations = [];
+            enemyModelReady = true;
+            if(playerModelReady) document.getElementById('status-msg').style.display='none';
+        });
+
+        // Inicialización temprana con fallback (por si tarda el GLB del jugador)
         initializePlayerModel();
 
         // ------------------------------------------------------------
@@ -561,12 +404,17 @@
         let spawnQueue = []; // cola de enemigos pendientes si el modelo no está listo
 
         // ------------------------------------------------------------
-        // Crear enemigo (instancia de la clase Enemigo)
-        //   - El modelo se clona con SkeletonUtils para que cada enemigo
-        //     tenga su propio esqueleto (SkinnedMesh compartido se rompe
-        //     sin esto, porque los huesos son los mismos nodos).
-        //   - Cada instancia obtiene su propio AnimationMixer vinculado a
-        //     su propio model clonado, no al asset original.
+        // Crear enemigo: clona el asset con SkeletonUtils y crea un
+        // AnimationMixer PROPIO anclado al modelo clonado.
+        //
+        // ¿Por qué clone? Porque cada enemigo necesita:
+        //   1. Su propia jerarquía de huesos (el SkinnedMesh de three.js
+        //      NO se puede compartir entre varias meshes: las inverseBind
+        //      y los PropertyBinding del mixer apuntan a huesos concretos).
+        //   2. Su propio AnimationMixer (uno por esqueleto).
+        //
+        // El asset viene de mech_03.glb, INDEPENDIENTE del jugador, así
+        // que no chocan los grafos de escena.
         // ------------------------------------------------------------
         function spawnEnemy(){
             if(!enemyModelReady){
@@ -583,10 +431,14 @@
             scene.add(enemyContainer);
 
             let enemyModel = null;
+            let mixer = null;
+            let action = null;
+            let clipName = null;
+
             if(enemyModelAsset){
-                // Crítico para animaciones: SkeletonUtils.clone duplica el
-                // esqueleto y re-mapea JOINTS_0/INV_BIND_MATRIX del skinned
-                // mesh, así cada enemigo puede animarse de forma independiente.
+                // SkeletonUtils.clone es la forma correcta: clona la
+                // jerarquía Y re-mapea JOINTS_0 / inverseBindMatrices del
+                // SkinnedMesh al nuevo esqueleto clonado.
                 if(THREE.SkeletonUtils && typeof THREE.SkeletonUtils.clone === 'function'){
                     enemyModel = THREE.SkeletonUtils.clone(enemyModelAsset);
                 } else {
@@ -594,28 +446,51 @@
                     console.warn('SkeletonUtils no disponible, usando clone() normal.');
                 }
                 enemyModel.scale.set(0.6,0.6,0.6);
-                // Tinte rojo para distinguir a los enemigos
                 enemyModel.traverse(child=>{
                     if(child.isMesh){
                         child.castShadow=true;
-                        if(child.material) child.material = new THREE.MeshStandardMaterial({color:0xff3333, roughness:0.3, emissive:0x4f0000});
+                        if(child.material){
+                            child.material = child.material.clone();
+                            child.material.color.set(0xff3333);
+                            child.material.emissive && child.material.emissive.set(0x4f0000);
+                        }
                     }
                 });
+
+                // Mixer propio del enemigo, anclado a SU modelo clonado
+                if(enemyAnimations.length){
+                    mixer = new THREE.AnimationMixer(enemyModel);
+                    action = mixer.clipAction(enemyAnimations[0]);
+                    action.setLoop(THREE.LoopRepeat, Infinity);
+                    action.play();
+                    clipName = enemyAnimations[0].name;
+                }
             } else {
                 enemyModel = createProceduralMech(true);
             }
-
-            // Construir la instancia de la clase. La clase, en su constructor,
-            // crea el mixer propio y vincula el primer clip disponible
-            // (en mech.glb: "ArmatureAction").
-            const enemy = new Enemigo({
-                container: enemyContainer,
-                meshModel: enemyModel,
-                animations: globalAnimations
-            });
             enemyContainer.add(enemyModel);
-            enemies.push(enemy);
-            console.log(`👾 Enemigo spawneado (mixer propio, clip="${enemy.animData ? enemy.animData.clipName : 'n/a'}").`);
+
+            // Barra de vida (nueva por enemigo)
+            const healthBar = new THREE.Mesh(
+                new THREE.BoxGeometry(1.5,0.15,0.1),
+                new THREE.MeshBasicMaterial({color:0xff0000})
+            );
+            healthBar.position.set(0,3.4,0);
+            enemyContainer.add(healthBar);
+
+            enemies.push({
+                container: enemyContainer,
+                model: enemyModel,
+                mixer, action, clipName,
+                animSpeed: 1.0,
+                animSpeedTarget: 1.0,
+                health:4, maxHealth:4,
+                healthBar,
+                lastShot:0,
+                shootInterval:1.2+Math.random()*1.5,
+                speed:7+Math.random()*3,
+                radius:1.5
+            });
         }
 
         // Función para procesar la cola de spawn
@@ -728,10 +603,11 @@
                     }
                 });
 
-                // Animación jugador (vía API de la clase Entidad)
+                // Animación jugador (mixer propio, llamada directa)
                 if(player.animData){
-                    player.setVelocidadAnimacion(isMoving ? 2.5 : 1.0);
-                    player.updateAnimacion(delta);
+                    const targetSpeed = isMoving ? 2.5 : 1.0;
+                    player.animData.speed += (targetSpeed - player.animData.speed) * 0.1;
+                    player.animData.mixer.update(delta * player.animData.speed);
                 }
 
                 // Parpadeo daño
@@ -751,30 +627,53 @@
             }
 
             // ------------------------------------------------------------
-            // IA ENEMIGOS (delegada a la clase Enemigo)
+            // IA ENEMIGOS
+            //   - Cada enemigo avanza SU PROPIO mixer con su propia
+            //     velocidad interpolada (idle=1.0, caminando=2.5).
             // ------------------------------------------------------------
             for(let i=enemies.length-1; i>=0; i--){
                 const enemy = enemies[i];
-                if(enemy.dead) continue;
+                const eCont = enemy.container;
+                eCont.lookAt(player.container.position.x, eCont.position.y, player.container.position.z);
+                const toPlayer = player.container.position.clone().sub(eCont.position);
+                const distToPlayer = toPlayer.length();
 
-                // La IA vive en la clase. Nos devuelve la dirección de
-                // disparo (Vector3) si debe disparar este frame, o null.
-                const shootDir = enemy.iaUpdate(player, delta, now/1000);
-
-                // Obstáculos
-                enemy.resolverObstaculos(obstacles);
-
-                // Disparo (si la IA lo pidió)
-                if(shootDir){
-                    createLaserBullet(
-                        enemy.container.position.clone().add(new THREE.Vector3(0,1.8,0)),
-                        shootDir,
-                        true
-                    );
+                let isMoving = false;
+                if(distToPlayer > 18){
+                    eCont.position.addScaledVector(toPlayer.clone().normalize().setY(0), enemy.speed*delta);
+                    isMoving = true;
+                } else if(distToPlayer < 8){
+                    eCont.position.addScaledVector(toPlayer.clone().normalize().multiplyScalar(-1).setY(0), enemy.speed*0.5*delta);
+                    isMoving = true;
                 }
 
-                // Billboard de la barra de vida (que mire a la cámara)
-                enemy.updateHealthBarBillboard(camera);
+                // Avance del mixer PROPIO del enemigo
+                if(enemy.mixer){
+                    enemy.animSpeedTarget = isMoving ? 2.5 : 1.0;
+                    enemy.animSpeed += (enemy.animSpeedTarget - enemy.animSpeed) * 0.1;
+                    enemy.mixer.update(delta * enemy.animSpeed);
+                }
+
+                // Obstáculos
+                obstacles.forEach(obs=>{
+                    const d=eCont.position.distanceTo(obs.mesh.position);
+                    if(d<obs.radius+1.2){
+                        const pushDir=eCont.position.clone().sub(obs.mesh.position).setY(0).normalize();
+                        eCont.position.addScaledVector(pushDir, (obs.radius+1.2)-d);
+                    }
+                });
+
+                // Disparo enemigo
+                if(!player.isDead && (now/1000 - enemy.lastShot)>enemy.shootInterval && distToPlayer<45){
+                    enemy.lastShot = now/1000;
+                    const shootDir = toPlayer.clone().normalize();
+                    shootDir.x += (Math.random()-0.5)*0.15;
+                    shootDir.z += (Math.random()-0.5)*0.15;
+                    createLaserBullet(eCont.position.clone().add(new THREE.Vector3(0,1.8,0)), shootDir, true);
+                }
+
+                enemy.healthBar.scale.x = enemy.health/enemy.maxHealth;
+                enemy.healthBar.quaternion.copy(camera.quaternion);
             }
 
             // ------------------------------------------------------------
@@ -847,16 +746,19 @@
                 if(!hitSomething && !b.isEnemy){
                     for(let e=enemies.length-1; e>=0; e--){
                         const enemy = enemies[e];
-                        if(enemy.dead) continue;
                         if(b.mesh.position.distanceTo(enemy.container.position.clone().add(new THREE.Vector3(0,1.2,0))) < enemy.radius){
                             hitSomething=true;
-                            const killed = enemy.takeDamage(1);
+                            enemy.health--;
                             sound.playHit();
                             createExplosionEffect(b.mesh.position,0x00ffd5);
-                            if(killed){
+                            if(enemy.health<=0){
+                                // Paramos el mixer del enemigo ANTES de
+                                // quitar el container, para liberar la
+                                // jerarquía de huesos que el mixer cacheó.
+                                if(enemy.mixer) enemy.mixer.stopAllAction();
+                                scene.remove(enemy.container);
                                 createExplosionEffect(enemy.container.position,0xff1111);
                                 sound.playExplosion();
-                                enemy.dispose();   // libera mixer + nodos
                                 enemies.splice(e,1);
                                 player.score += 150;
                                 document.getElementById('scoreVal').innerText = String(player.score).padStart(4,'0');
@@ -906,7 +808,10 @@
             sound.playExplosion();
         }
         function resetGame(){
-            enemies.forEach(e=>e.dispose());
+            enemies.forEach(e=>{
+                if(e.mixer) e.mixer.stopAllAction();
+                scene.remove(e.container);
+            });
             bullets.forEach(b=>scene.remove(b.mesh));
             particles.forEach(p=>scene.remove(p.points));
             enemies.length=0; bullets.length=0; particles.length=0;
