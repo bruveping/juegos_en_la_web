@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juego Musical Congelados - Visualizador y Pausa Dinámica</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Fredoka', sans-serif;
+            touch-action: manipulation;
+        }
+        .retro-shadow {
+            box-shadow: 0 10px 0 rgba(0, 0, 0, 0.3);
+        }
+        .retro-button:active {
+            transform: translateY(4px);
+            box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-950 via-purple-950 to-slate-900 text-white min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 select-none overflow-x-hidden">
+
+    <!-- Header / Title -->
+    <header class="text-center mb-3">
+        <h1 class="text-2xl sm:text-4xl font-bold tracking-wider text-cyan-300 drop-shadow-[0_4px_4px_rgba(0,0,0,0.6)]">🎵 JUEGO MUSICAL CONGELADOS 🧊</h1>
+        <p class="text-xs sm:text-sm text-pink-300 mt-1">Visualizador de audio con pausa automática de 5s y reanudación exacta</p>
+    </header>
+
+    <!-- Main Container -->
+    <div class="relative w-full max-w-3xl bg-slate-900 rounded-3xl retro-shadow border-4 border-cyan-500 overflow-hidden flex flex-col items-center">
+        
+        <!-- MP3 Music Control Panel -->
+        <div class="w-full bg-slate-800/90 px-4 py-3 flex flex-wrap items-center justify-between text-xs sm:text-sm border-b-2 border-cyan-700/50 gap-2 z-10">
+            <div class="flex items-center space-x-2">
+                <label for="mp3Upload" class="bg-gradient-to-r from-pink-500 to-purple-600 hover:from-pink-400 hover:to-purple-500 text-white font-bold py-2 px-4 rounded-xl cursor-pointer shadow transition text-xs flex items-center gap-2 retro-button">
+                    📂 Subir MP3
+                </label>
+                <input type="file" id="mp3Upload" accept="audio/mp3, audio/*" class="hidden">
+                <span id="songName" class="text-cyan-200 truncate max-w-[140px] sm:max-w-xs font-semibold">Sin archivo de audio</span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <span id="audioStatus" class="bg-gray-700 px-2.5 py-1 rounded-lg text-gray-300 text-xs font-bold">Inactivo</span>
+                <button id="toggleAudioBtn" onclick="toggleCustomMusic()" class="bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 px-4 py-2 rounded-xl font-bold shadow text-xs transition retro-button disabled:opacity-50" disabled>Reproducir</button>
+            </div>
+        </div>
+
+        <!-- Canvas Visualizer Area -->
+        <div class="relative w-full aspect-[16/9] max-h-[500px] bg-black flex justify-center items-center overflow-hidden">
+            <canvas id="visualizerCanvas" class="w-full h-full block"></canvas>
+
+            <!-- Overlay for Initial State / Info -->
+            <div id="infoOverlay" class="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center z-20">
+                <div class="bg-slate-900/90 border-2 border-cyan-400 p-6 rounded-2xl max-w-md shadow-2xl">
+                    <h2 class="text-xl sm:text-2xl font-bold text-yellow-300 mb-2">¡Sube tu MP3 favorito!</h2>
+                    <p class="text-xs sm:text-sm text-slate-300 mb-4 leading-relaxed">
+                        Este visualizador dinámico te dará pistas visuales exactas de cuándo se pausará la música durante 5 segundos y cuándo volverá a sonar exactamente en el segundo donde quedó.
+                    </p>
+                    <button onclick="dismissOverlay()" class="w-full py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold rounded-xl text-sm retro-button transition">
+                        ¡ENTENDIDO!
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status & Timeline Bar -->
+        <div class="w-full bg-slate-900 p-4 flex flex-col gap-2 border-t border-slate-800 text-xs sm:text-sm">
+            <div class="flex justify-between items-center text-slate-300">
+                <span id="loopPhaseText" class="font-semibold text-cyan-300">Estado: Esperando audio</span>
+                <span id="timeDisplay" class="font-mono bg-slate-800 px-2 py-1 rounded text-pink-400">00:00 / 00:00</span>
+            </div>
+            <!-- Progress Bar -->
+            <div class="w-full bg-slate-800 h-3 rounded-full overflow-hidden p-0.5 border border-slate-700">
+                <div id="progressBar" class="bg-gradient-to-r from-cyan-400 via-purple-500 to-pink-500 h-full rounded-full w-0 transition-all duration-100"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="mt-3 text-center text-xs text-indigo-300">
+        Juego Musical Congelados • Visualizador Dinámico de Frecuencia y Pausa Precisa
+    </footer>
+
+    <!-- HTML5 Audio Element -->
+    <audio id="customAudio" preload="auto"></audio>
+
+    <!-- Scripting -->
+    <script>
+        const customAudio = document.getElementById('customAudio');
+        const mp3Upload = document.getElementById('mp3Upload');
+        const songNameSpan = document.getElementById('songName');
+        const audioStatus = document.getElementById('audioStatus');
+        const toggleAudioBtn = document.getElementById('toggleAudioBtn');
+        const infoOverlay = document.getElementById('infoOverlay');
+        const loopPhaseText = document.getElementById('loopPhaseText');
+        const timeDisplay = document.getElementById('timeDisplay');
+        const progressBar = document.getElementById('progressBar');
+
+        const canvas = document.getElementById('visualizerCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // Configurar tamaño real del canvas
+        function resizeCanvas() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let audioCtx = null;
+        let analyser = null;
+        let sourceNode = null;
+        let isAudioSetup = false;
+
+        let isPlaying = false;
+        let isPausedForBreak = false;
+        let musicLoopTimer = null;
+        let countdownTimer = null;
+        
+        let playDuration = 15;  // segundos de reproducción antes de la pausa de 5s
+        let pauseDuration = 5;   // segundos de pausa exacta
+        let currentPhaseTimeLeft = playDuration;
+        let exactPausedSecond = 0;
+
+        function dismissOverlay() {
+            infoOverlay.style.display = 'none';
+        }
+
+        // Configurar Web Audio API Analyser
+        function setupAudioContext() {
+            if (isAudioSetup) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                sourceNode = audioCtx.createMediaElementSource(customAudio);
+                sourceNode.connect(analyser);
+                analyser.connect(audioCtx.destination);
+                analyser.fftSize = 128;
+                isAudioSetup = true;
+            } catch (e) {
+                console.error("Error setting up audio context:", e);
+            }
+        }
+
+        mp3Upload.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                songNameSpan.textContent = file.name;
+                const fileURL = URL.createObjectURL(file);
+                customAudio.src = fileURL;
+                customAudio.load();
+                toggleAudioBtn.disabled = false;
+                audioStatus.textContent = "Listo";
+                audioStatus.className = "bg-blue-600 px-2.5 py-1 rounded-lg text-white text-xs font-bold";
+                infoOverlay.style.display = 'none';
+            }
+        });
+
+        function toggleCustomMusic() {
+            if (!customAudio.src) return;
+            setupAudioContext();
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            if (isPlaying) {
+                stopMusicLoop();
+                customAudio.pause();
+                isPlaying = false;
+                isPausedForBreak = false;
+                toggleAudioBtn.textContent = "Reproducir";
+                toggleAudioBtn.className = "bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 px-4 py-2 rounded-xl font-bold shadow text-xs transition retro-button";
+                audioStatus.textContent = "Detenido";
+                audioStatus.className = "bg-gray-700 px-2.5 py-1 rounded-lg text-gray-300 text-xs font-bold";
+                loopPhaseText.textContent = "Estado: Detenido por el usuario";
+            } else {
+                startPlayingSequence();
+            }
+        }
+
+        function startPlayingSequence() {
+            customAudio.play().catch(err => console.log(err));
+            isPlaying = true;
+            isPausedForBreak = false;
+            toggleAudioBtn.textContent = "Pausar";
+            toggleAudioBtn.className = "bg-gradient-to-r from-red-500 to-pink-600 hover:from-red-400 hover:to-pink-500 px-4 py-2 rounded-xl font-bold shadow text-xs transition retro-button";
+            audioStatus.textContent = "Reproduciendo";
+            audioStatus.className = "bg-emerald-600 px-2.5 py-1 rounded-lg text-white text-xs font-bold animate-pulse";
+
+            startPlayTimer();
+        }
+
+        function startPlayTimer() {
+            if (musicLoopTimer) clearTimeout(musicLoopTimer);
+            currentPhaseTimeLeft = playDuration;
+
+            // Timer secundario para actualizar la cuenta regresiva hacia el corte
+            if (countdownTimer) clearInterval(countdownTimer);
+            countdownTimer = setInterval(() => {
+                if (!isPlaying) return;
+                currentPhaseTimeLeft--;
+                if (currentPhaseTimeLeft <= 0) {
+                    clearInterval(countdownTimer);
+                    triggerMusicPauseBreak();
+                }
+            }, 1000);
+        }
+
+        function triggerMusicPauseBreak() {
+            if (!isPlaying) return;
+
+            // 1. Pausar la música y guardar el segundo exacto
+            customAudio.pause();
+            isPausedForBreak = true;
+            exactPausedSecond = customAudio.currentTime;
+
+            audioStatus.textContent = "Pausa 5s (Congelado)";
+            audioStatus.className = "bg-amber-600 px-2.5 py-1 rounded-lg text-white text-xs font-bold animate-ping";
+            loopPhaseText.textContent = `⚠️ ¡MÚSICA CONGELADA! Retoma en exacto: ${formatTime(exactPausedSecond)}`;
+
+            let pauseTimeLeft = pauseDuration;
+            if (countdownTimer) clearInterval(countdownTimer);
+
+            // 2. Cuenta regresiva de los 5 segundos de pausa
+            countdownTimer = setInterval(() => {
+                pauseTimeLeft--;
+                if (pauseTimeLeft <= 0) {
+                    clearInterval(countdownTimer);
+                    if (isPlaying) {
+                        // 3. Recomenzar exactamente donde terminó
+                        customAudio.currentTime = exactPausedSecond;
+                        customAudio.play().catch(err => console.log(err));
+                        isPausedForBreak = false;
+
+                        audioStatus.textContent = "Reproduciendo";
+                        audioStatus.className = "bg-emerald-600 px-2.5 py-1 rounded-lg text-white text-xs font-bold animate-pulse";
+                        
+                        // Reiniciar ciclo de reproducción
+                        startPlayTimer();
+                    }
+                } else {
+                    loopPhaseText.textContent = `❄️ Reanudando en ${pauseTimeLeft}s (Segundo: ${formatTime(exactPausedSecond)})`;
+                }
+            }, 1000);
+        }
+
+        function stopMusicLoop() {
+            if (musicLoopTimer) {
+                clearTimeout(musicLoopTimer);
+                musicLoopTimer = null;
+            }
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+        }
+
+        function formatTime(seconds) {
+            let mins = Math.floor(seconds / 60);
+            let secs = Math.floor(seconds % 60);
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // --- Dynamic Visualizer Render Loop ---
+        let angleRot = 0;
+
+        function drawVisualizer() {
+            requestAnimationFrame(drawVisualizer);
+
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            let bufferLength = 64;
+            let dataArray = new Uint8Array(bufferLength);
+
+            if (analyser && isPlaying && !isPausedForBreak) {
+                analyser.getByteFrequencyData(dataArray);
+            } else {
+                // Simulación visual suave cuando está en pausa o detenido
+                for (let i = 0; i < bufferLength; i++) {
+                    dataArray[i] = Math.sin(Date.now() * 0.003 + i * 0.2) * 20 + 25;
+                }
+            }
+
+            // Actualizar interfaz de tiempo y barra
+            if (!isNaN(customAudio.duration) && customAudio.duration > 0) {
+                let current = customAudio.currentTime;
+                let duration = customAudio.duration;
+                timeDisplay.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
+                progressBar.style.width = `${(current / duration) * 100}%`;
+            }
+
+            // Dibujar ondas circulares coloridas y dinámicas (pista visual del estado musical)
+            let cx = canvas.width / 2;
+            let cy = canvas.height / 2;
+            let baseRadius = Math.min(cx, cy) * 0.35;
+
+            angleRot += 0.015;
+
+            // Color cambia a advertencia (rojo/amarillo) cuando faltan 3s para el corte de 5s
+            let isWarning = currentPhaseTimeLeft <= 3 && !isPausedForBreak && isPlaying;
+            let ringColorPrimary = isWarning ? '#ef4444' : '#06b6d4';
+            let ringColorSecondary = isWarning ? '#f59e0b' : '#ec4899';
+
+            // Anillo exterior rotatorio con barras de frecuencia
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(angleRot);
+
+            for (let i = 0; i < bufferLength; i++) {
+                let angle = (i * 2 * Math.PI) / bufferLength;
+                let barHeight = (dataArray[i] / 255) * 80;
+
+                let x1 = Math.cos(angle) * baseRadius;
+                let y1 = Math.sin(angle) * baseRadius;
+                let x2 = Math.cos(angle) * (baseRadius + barHeight);
+                let y2 = Math.sin(angle) * (baseRadius + barHeight);
+
+                ctx.strokeStyle = i % 2 === 0 ? ringColorPrimary : ringColorSecondary;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Círculo central con temporizador visual / indicador de estado
+            ctx.beginPath();
+            ctx.arc(cx, cy, baseRadius * 0.75, 0, Math.PI * 2);
+            ctx.fillStyle = isPausedForBreak ? 'rgba(180, 83, 9, 0.4)' : (isWarning ? 'rgba(239, 68, 68, 0.3)' : 'rgba(15, 23, 42, 0.85)');
+            ctx.fill();
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = isPausedForBreak ? '#f59e0b' : ringColorPrimary;
+            ctx.stroke();
+
+            // Texto central en el canvas
+            ctx.font = 'bold 18px Fredoka, sans-serif';
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            if (isPausedForBreak) {
+                ctx.fillText("⏸️ PAUSA 5s", cx, cy - 10);
+                ctx.font = '14px Fredoka, sans-serif';
+                ctx.fillStyle = '#fde047';
+                ctx.fillText("Reanudando exacto...", cx, cy + 15);
+            } else if (isPlaying) {
+                ctx.fillText(`Corte en: ${currentPhaseTimeLeft}s`, cx, cy - 10);
+                ctx.font = '13px Fredoka, sans-serif';
+                ctx.fillStyle = isWarning ? '#fca5a5' : '#67e8f9';
+                ctx.fillText("🎵 Reproduciendo", cx, cy + 15);
+            } else {
+                ctx.fillText("🧊 CONGELADOS", cx, cy - 10);
+                ctx.font = '12px Fredoka, sans-serif';
+                ctx.fillStyle = '#94a3b8';
+                ctx.fillText("Presiona Reproducir", cx, cy + 15);
+            }
+        }
+
+        requestAnimationFrame(drawVisualizer);
+    </script>
+</body>
+</html>
