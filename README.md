@@ -15,3 +15,6 @@
 
 ### juego_shooter_Mech_2026_7_17
 [juego_shooter_Mech_2026_7_17](https://bruveping.github.io/juegos_en_la_web/juego_shooter_Mech_2026_7_17/)
+
+### juego_musical_congelados
+[juego_musical_congelados](https://bruveping.github.io/juegos_en_la_web/juego_musical_congelados/)
